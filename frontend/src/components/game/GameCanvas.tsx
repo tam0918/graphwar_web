@@ -24,7 +24,10 @@ interface GameCanvasProps {
   obstacles: Obstacle[];
   projectile: Projectile | null;
   trajectoryPath?: Point[];
-  onAnimationComplete?: () => void;
+  onAnimationComplete?: (result: {
+    type: 'player' | 'obstacle' | 'boundary' | 'miss';
+    targetId?: string;
+  }) => void;
   className?: string;
 }
 
@@ -406,9 +409,9 @@ export function GameCanvas({
     const path = projectile.path;
     const currentIndex = projectileIndexRef.current;
 
-    // Check if animation is complete
+    // Check if animation is complete without collision
     if (currentIndex >= path.length) {
-      onAnimationComplete?.();
+      onAnimationComplete?.({ type: 'miss' });
       projectileIndexRef.current = 0;
       render();
       return;
@@ -419,8 +422,15 @@ export function GameCanvas({
     const collision = checkCollision(currentPos, players, obstacles, projectile.owner);
 
     if (collision.type !== 'none') {
-      // Collision detected - stop animation
-      onAnimationComplete?.();
+      const payload =
+        collision.type === 'player'
+          ? { type: 'player' as const, targetId: (collision.target as Player)?.id }
+          : collision.type === 'obstacle'
+            ? { type: 'obstacle' as const, targetId: (collision.target as Obstacle)?.id }
+            : { type: 'boundary' as const };
+
+      // Collision detected - stop animation and report
+      onAnimationComplete?.(payload);
       projectileIndexRef.current = 0;
       render();
       return;

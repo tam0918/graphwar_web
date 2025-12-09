@@ -91,6 +91,7 @@ export interface GameState {
   turn: TurnState;
   gridConfig: GridConfig;
   winner: string | null; // Player ID or null
+  winnerTeam: Player['team'] | null;
 }
 
 /**
@@ -121,8 +122,9 @@ export interface SocketEvents {
   turnUpdate: { turn: TurnState };
   projectileFired: { path: Point[]; playerId: string };
   playerHit: { playerId: string; damage: number };
+  obstacleDamaged: { obstacle: Obstacle };
   obstacleDestroyed: { obstacleId: string };
-  gameOver: { winnerId: string };
+  gameOver: { winnerId: string | null; winnerTeam: Player['team'] | null };
   error: { message: string }; // Vietnamese error message
 }
 
@@ -214,6 +216,7 @@ export const GAME_CONSTANTS = {
   PROJECTILE_SPEED: 3, // Points per frame
   MAX_HEALTH: 100,
   HIT_DAMAGE: 50,
+  OBSTACLE_HIT_DAMAGE: 40,
   ANIMATION_FPS: 60,
   PATH_RESOLUTION: 0.05, // X increment for path calculation
 } as const;

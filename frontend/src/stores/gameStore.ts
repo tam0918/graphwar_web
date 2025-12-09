@@ -34,6 +34,7 @@ interface GameStore extends GameState {
   removePlayer: (playerId: string) => void;
   updatePlayer: (playerId: string, updates: Partial<Player>) => void;
   damagePlayer: (playerId: string, damage: number) => void;
+  damageObstacle: (obstacleId: string, damage: number) => void;
 
   // Turn actions
   setPhase: (phase: GamePhase) => void;
@@ -50,7 +51,7 @@ interface GameStore extends GameState {
 
   // Game flow
   startGame: () => void;
-  endGame: (winnerId: string) => void;
+  endGame: (winnerId: string | null, winnerTeam?: Player['team'] | null) => void;
   resetGame: () => void;
 
   // State sync (for multiplayer)
@@ -101,7 +102,7 @@ function generateObstacles(gridConfig: GridConfig, count: number = 3): Obstacle[
 // Initial state
 const initialState: Omit<GameStore, 
   | 'setMyPlayerId' | 'setConnected' | 'setRoomId'
-  | 'addPlayer' | 'removePlayer' | 'updatePlayer' | 'damagePlayer'
+  | 'addPlayer' | 'removePlayer' | 'updatePlayer' | 'damagePlayer' | 'damageObstacle'
   | 'setPhase' | 'nextTurn' | 'setCurrentPlayer'
   | 'fireProjectile' | 'clearProjectile'
   | 'addObstacle' | 'destroyObstacle'
@@ -119,6 +120,7 @@ const initialState: Omit<GameStore,
   },
   gridConfig: DEFAULT_GRID_CONFIG,
   winner: null,
+  winnerTeam: null,
   myPlayerId: null,
   isConnected: false,
 };
@@ -160,15 +162,37 @@ export const useGameStore = create<GameStore>()(
           };
         });
 
-        // Check for winner
+        // Check for winner by remaining teams
         const alivePlayers = players.filter((p) => p.isAlive);
-        const winner = alivePlayers.length === 1 ? alivePlayers[0].id : null;
+        const aliveTeams = new Set(alivePlayers.map((p) => p.team));
+        const winner = aliveTeams.size <= 1 ? (alivePlayers[0]?.id ?? null) : null;
+        const winnerTeam = aliveTeams.size <= 1 ? (alivePlayers[0]?.team ?? null) : null;
 
         return {
           players,
           winner,
+          winnerTeam,
           turn: winner ? { ...state.turn, phase: 'gameover' } : state.turn,
         };
+      }),
+
+      damageObstacle: (obstacleId, damage) => set((state) => {
+        const obstacles = state.obstacles.map((o) => {
+          if (o.id !== obstacleId) return o;
+
+          const newHealth = Math.max(0, o.health - damage);
+          const healthRatio = Math.max(0.1, newHealth / 100);
+
+          return {
+            ...o,
+            health: newHealth,
+            width: Math.max(0.5, o.width * healthRatio),
+            height: Math.max(0.5, o.height * healthRatio),
+            isDestroyed: newHealth === 0,
+          };
+        });
+
+        return { obstacles };
       }),
 
       // Turn actions
@@ -177,6 +201,8 @@ export const useGameStore = create<GameStore>()(
       })),
 
       nextTurn: () => set((state) => {
+        if (state.turn.phase === 'gameover') return state;
+
         const alivePlayers = state.players.filter((p) => p.isAlive);
         if (alivePlayers.length < 2) return state;
 
@@ -279,12 +305,14 @@ export const useGameStore = create<GameStore>()(
             phase: 'input',
           },
           winner: null,
+          winnerTeam: null,
           projectile: null,
         });
       },
 
-      endGame: (winnerId) => set({
+      endGame: (winnerId, winnerTeam = null) => set({
         winner: winnerId,
+        winnerTeam,
         turn: { ...get().turn, phase: 'gameover' },
       }),
 

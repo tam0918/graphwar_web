@@ -99,6 +99,7 @@ class GameRoomManager {
       },
       gridConfig,
       winner: null,
+      winnerTeam: null,
     };
 
     const room: GameRoom = {
@@ -159,6 +160,10 @@ class GameRoomManager {
     // Generate obstacles
     room.state.obstacles = this.generateObstacles(room.state.gridConfig);
 
+    // Reset win state
+    room.state.winner = null;
+    room.state.winnerTeam = null;
+
     // Set first turn
     room.state.turn = {
       currentPlayerId: room.state.players[0].id,
@@ -183,10 +188,13 @@ class GameRoomManager {
     player.health = Math.max(0, player.health - damage);
     player.isAlive = player.health > 0;
 
-    // Check for winner
+    // Check for winner (by team, not just player count)
     const alivePlayers = room.state.players.filter(p => p.isAlive);
-    if (alivePlayers.length === 1) {
-      room.state.winner = alivePlayers[0].id;
+    const aliveTeams = new Set(alivePlayers.map(p => p.team));
+
+    if (aliveTeams.size <= 1) {
+      room.state.winner = alivePlayers[0]?.id ?? null;
+      room.state.winnerTeam = alivePlayers[0]?.team ?? null;
       room.state.turn.phase = 'gameover';
     }
 
@@ -199,6 +207,11 @@ class GameRoomManager {
   nextTurn(roomId: string): GameState | null {
     const room = this.rooms.get(roomId);
     if (!room) return null;
+
+    // Do not advance turns once the game is over
+    if (room.state.turn.phase === 'gameover') {
+      return room.state;
+    }
 
     const alivePlayers = room.state.players.filter(p => p.isAlive);
     if (alivePlayers.length < 2) return room.state;

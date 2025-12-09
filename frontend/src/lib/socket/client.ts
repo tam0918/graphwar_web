@@ -21,9 +21,10 @@ interface ServerEvents {
   turnUpdate: (data: { turn: TurnState }) => void;
   projectileFired: (data: { path: Point[]; playerId: string; functionString: string }) => void;
   playerHit: (data: { playerId: string; damage: number; newHealth: number }) => void;
+  obstacleDamaged: (data: { obstacle: GameState['obstacles'][number] }) => void;
   obstacleDestroyed: (data: { obstacleId: string }) => void;
   turnEnded: (data: { turn: TurnState }) => void;
-  gameOver: (data: { winnerId: string; winnerName: string }) => void;
+  gameOver: (data: { winnerId: string | null; winnerName: string; winnerTeam: Player['team'] | null }) => void;
   playerDisconnected: (data: { playerId: string; playerName: string }) => void;
   error: (data: { message: string }) => void;
 }
@@ -94,6 +95,14 @@ export function connectSocket(): Socket {
     store.updatePlayer(playerId, { health: newHealth, isAlive: newHealth > 0 });
   });
 
+  socket.on('obstacleDamaged', ({ obstacle }) => {
+    console.log('[Socket] Obstacle damaged:', obstacle.id, 'health:', obstacle.health);
+    const current = useGameStore.getState();
+    store.syncGameState({
+      obstacles: current.obstacles.map((o) => (o.id === obstacle.id ? obstacle : o)),
+    });
+  });
+
   socket.on('obstacleDestroyed', ({ obstacleId }) => {
     console.log('[Socket] Obstacle destroyed:', obstacleId);
     store.destroyObstacle(obstacleId);
@@ -104,9 +113,9 @@ export function connectSocket(): Socket {
     store.syncGameState({ turn, projectile: null });
   });
 
-  socket.on('gameOver', ({ winnerId, winnerName }) => {
+  socket.on('gameOver', ({ winnerId, winnerName, winnerTeam }) => {
     console.log('[Socket] Game over, winner:', winnerName);
-    store.endGame(winnerId);
+    store.endGame(winnerId, winnerTeam);
   });
 
   socket.on('playerDisconnected', ({ playerId, playerName }) => {

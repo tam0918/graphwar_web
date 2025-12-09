@@ -161,26 +161,37 @@ export function setupSocketHandlers(io: GameServer): void {
             });
 
             // Check for game over
-            if (newState.winner) {
+            if (newState.turn.phase === 'gameover') {
               const winner = newState.players.find(p => p.id === newState.winner);
               io.to(roomId).emit('gameOver', {
                 winnerId: newState.winner,
-                winnerName: winner?.name ?? 'Không xác định',
+                winnerName: winner?.name ?? 'Hòa',
+                winnerTeam: newState.winnerTeam,
               });
-            } else {
-              // Next turn
-              const nextState = roomManager.nextTurn(roomId);
-              if (nextState) {
-                io.to(roomId).emit('turnEnded', { turn: nextState.turn });
-              }
+              return;
+            }
+
+            // Next turn
+            const nextState = roomManager.nextTurn(roomId);
+            if (nextState) {
+              io.to(roomId).emit('turnEnded', { turn: nextState.turn });
             }
           }
         } else if (targetType === 'obstacle') {
-          // Destroy obstacle
+          // Damage obstacle
           const obstacle = room.state.obstacles.find(o => o.id === targetId);
           if (obstacle) {
-            obstacle.isDestroyed = true;
-            io.to(roomId).emit('obstacleDestroyed', { obstacleId: targetId });
+            obstacle.health = Math.max(0, obstacle.health - GAME_CONSTANTS.OBSTACLE_HIT_DAMAGE);
+            const shrinkFactor = 0.8;
+            obstacle.width = Math.max(0.5, obstacle.width * shrinkFactor);
+            obstacle.height = Math.max(0.5, obstacle.height * shrinkFactor);
+
+            if (obstacle.health === 0) {
+              obstacle.isDestroyed = true;
+              io.to(roomId).emit('obstacleDestroyed', { obstacleId: targetId });
+            } else {
+              io.to(roomId).emit('obstacleDamaged', { obstacle });
+            }
           }
 
           // Next turn
@@ -199,6 +210,9 @@ export function setupSocketHandlers(io: GameServer): void {
      */
     socket.on('projectileMiss', ({ roomId }) => {
       try {
+        const room = roomManager.getRoom(roomId);
+        if (room?.state.turn.phase === 'gameover') return;
+
         const nextState = roomManager.nextTurn(roomId);
         if (nextState) {
           io.to(roomId).emit('turnEnded', { turn: nextState.turn });

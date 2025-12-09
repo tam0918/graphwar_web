@@ -78,6 +78,7 @@ export default function GamePage() {
   const turn = useGameStore((state) => state.turn);
   const gridConfig = useGameStore((state) => state.gridConfig);
   const myPlayerId = useGameStore((state) => state.myPlayerId);
+  const roomId = useGameStore((state) => state.roomId);
   const winner = useGameStore((state) => state.winner);
   const isMyTurn = useIsMyTurn();
   const phase = useGamePhase();
@@ -86,7 +87,9 @@ export default function GamePage() {
   const fireProjectile = useGameStore((state) => state.fireProjectile);
   const nextTurn = useGameStore((state) => state.nextTurn);
   const damagePlayer = useGameStore((state) => state.damagePlayer);
+  const damageObstacle = useGameStore((state) => state.damageObstacle);
   const setPhase = useGameStore((state) => state.setPhase);
+  const clearProjectile = useGameStore((state) => state.clearProjectile);
   const resetGame = useGameStore((state) => state.resetGame);
 
   // Initialize demo game on mount
@@ -137,57 +140,49 @@ export default function GamePage() {
   }, [fireProjectile, showNotification]);
 
   // Handle animation complete
-  const handleAnimationComplete = useCallback(() => {
-    // Check what the projectile hit
-    const currentProjectile = useGameStore.getState().projectile;
-    if (!currentProjectile) return;
+  const handleAnimationComplete = useCallback((result: {
+    type: 'player' | 'obstacle' | 'boundary' | 'miss';
+    targetId?: string;
+  }) => {
+    // Clear projectile so we only resolve once
+    clearProjectile();
 
-    const path = currentProjectile.path;
-    if (!path || path.length === 0) {
-      nextTurn();
+    if (result.type === 'player' && result.targetId) {
+      damagePlayer(result.targetId, GAME_CONSTANTS.HIT_DAMAGE);
+      const hitPlayer = players.find((p) => p.id === result.targetId);
+      showNotification(`${hitPlayer?.name ?? 'Đối thủ'} ${UI_TEXT.MSG_PLAYER_HIT}`);
+      setPhase('hit');
+
+      setTimeout(() => {
+        const updated = useGameStore.getState();
+        const alivePlayers = updated.players.filter((p) => p.isAlive);
+        if (alivePlayers.length <= 1) {
+          const winnerName = alivePlayers[0]?.name ?? 'Hòa';
+          showNotification(`${winnerName} ${UI_TEXT.MSG_YOU_WIN}`);
+          return;
+        }
+        nextTurn();
+      }, 800);
       return;
     }
 
-    // Check for player hit along the entire path
-    for (const player of players) {
-      if (!player.isAlive || player.id === currentProjectile.owner) continue;
-
-      // Check all points in the path for collision
-      for (const point of path) {
-        const distance = Math.sqrt(
-          Math.pow(point.x - player.position.x, 2) +
-          Math.pow(point.y - player.position.y, 2)
-        );
-
-        // Hit detection radius (more generous for better gameplay)
-        if (distance < 1.5) {
-          damagePlayer(player.id, GAME_CONSTANTS.HIT_DAMAGE);
-          showNotification(`${player.name} ${UI_TEXT.MSG_PLAYER_HIT}`);
-          setPhase('hit');
-          
-          // Check for game over after damage
-          setTimeout(() => {
-            const updatedPlayers = useGameStore.getState().players;
-            const alivePlayers = updatedPlayers.filter(p => p.isAlive);
-            if (alivePlayers.length === 1) {
-              // Game over handled by store
-              showNotification(`${alivePlayers[0].name} ${UI_TEXT.MSG_YOU_WIN}`);
-            } else {
-              nextTurn();
-            }
-          }, 1500);
-          return;
-        }
-      }
+    if (result.type === 'obstacle' && result.targetId) {
+      damageObstacle(result.targetId, GAME_CONSTANTS.OBSTACLE_HIT_DAMAGE);
+      setPhase('hit');
+      showNotification(UI_TEXT.MSG_OBSTACLE_DESTROYED);
+      setTimeout(() => {
+        nextTurn();
+      }, 500);
+      return;
     }
 
-    // No hit - miss
+    // Miss or boundary
     setPhase('miss');
     showNotification(UI_TEXT.MSG_TURN_ENDED);
     setTimeout(() => {
       nextTurn();
-    }, 1000);
-  }, [players, damagePlayer, nextTurn, setPhase, showNotification]);
+    }, 400);
+  }, [clearProjectile, damageObstacle, damagePlayer, nextTurn, players, setPhase, showNotification]);
 
   // Handle new game
   const handleNewGame = useCallback(() => {
@@ -201,6 +196,7 @@ export default function GamePage() {
   const currentPlayer = players.find(p => p.id === turn.currentPlayerId);
   const myPlayer = players.find(p => p.id === myPlayerId);
   const opponent = players.find(p => p.id !== myPlayerId);
+  const canShoot = roomId === 'LOCAL' ? true : isMyTurn;
 
   return (
     <div className="game-container min-h-screen p-4 md:p-8">
@@ -284,8 +280,8 @@ export default function GamePage() {
         {/* Control Panel (Right) */}
         <div className="lg:col-span-1">
           <ControlPanel
-            isMyTurn={true}
-            isGameActive={phase !== 'gameover' && phase !== 'waiting'}
+            isMyTurn={canShoot}
+            isGameActive={phase === 'input'}
             currentPhase={phase}
             onFire={handleFire}
             playerName={currentPlayer?.name}

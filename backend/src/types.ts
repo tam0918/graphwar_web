@@ -70,6 +70,7 @@ export interface GameState {
   turn: TurnState;
   gridConfig: GridConfig;
   winner: string | null;
+  winnerTeam: Player['team'] | null;
 }
 
 export interface GameRoom {
@@ -98,9 +99,10 @@ export interface ServerToClientEvents {
   turnUpdate: (data: { turn: TurnState }) => void;
   projectileFired: (data: { path: Point[]; playerId: string; functionString: string }) => void;
   playerHit: (data: { playerId: string; damage: number; newHealth: number }) => void;
+  obstacleDamaged: (data: { obstacle: Obstacle }) => void;
   obstacleDestroyed: (data: { obstacleId: string }) => void;
   turnEnded: (data: { turn: TurnState }) => void;
-  gameOver: (data: { winnerId: string; winnerName: string }) => void;
+  gameOver: (data: { winnerId: string | null; winnerName: string; winnerTeam: Player['team'] | null }) => void;
   playerDisconnected: (data: { playerId: string; playerName: string }) => void;
   error: (data: { message: string }) => void;
 }
@@ -130,6 +132,7 @@ export const GAME_CONSTANTS = {
   MAX_PLAYERS: 2,
   MAX_HEALTH: 100,
   HIT_DAMAGE: 50,
+  OBSTACLE_HIT_DAMAGE: 40,
   DEFAULT_GRID: {
     width: 800,
     height: 600,
