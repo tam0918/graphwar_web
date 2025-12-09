@@ -31,24 +31,26 @@ interface GameCanvasProps {
   className?: string;
 }
 
-// Color palette
+// Color palette (higher contrast, modern neon feel)
 const COLORS = {
-  background: '#0a0a0f',
-  gridLine: '#1a1a2e',
-  gridLineMajor: '#2a2a4e',
-  axisLine: '#4a4a6e',
-  playerRed: '#ef4444',
-  playerRedGlow: 'rgba(239, 68, 68, 0.3)',
-  playerBlue: '#3b82f6',
-  playerBlueGlow: 'rgba(59, 130, 246, 0.3)',
+  backgroundTop: '#0b1221',
+  backgroundBottom: '#0e1a30',
+  vignette: 'rgba(0,0,0,0.35)',
+  gridLine: 'rgba(255,255,255,0.05)',
+  gridLineMajor: 'rgba(255,255,255,0.12)',
+  axisLine: '#5eead4',
+  playerRed: '#f43f5e',
+  playerRedGlow: 'rgba(244, 63, 94, 0.35)',
+  playerBlue: '#22d3ee',
+  playerBlueGlow: 'rgba(34, 211, 238, 0.35)',
   projectile: '#fbbf24',
-  projectileGlow: 'rgba(251, 191, 36, 0.5)',
-  trajectory: 'rgba(251, 191, 36, 0.6)',
-  trajectoryPreview: 'rgba(251, 191, 36, 0.3)',
-  obstacle: '#6b7280',
-  obstacleStroke: '#9ca3af',
-  healthBarBg: '#1f2937',
-  healthBarFill: '#10b981',
+  projectileGlow: 'rgba(251, 191, 36, 0.55)',
+  trajectory: 'rgba(251, 191, 36, 0.7)',
+  trajectoryPreview: 'rgba(251, 191, 36, 0.28)',
+  obstacle: '#8b9bb5',
+  obstacleStroke: '#cbd5e1',
+  healthBarBg: '#0f172a',
+  healthBarFill: '#34d399',
   text: '#e5e7eb',
 };
 
@@ -71,8 +73,18 @@ export function GameCanvas({
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
     const { width, height, xMin, xMax, yMin, yMax, gridSpacing } = gridConfig;
 
-    // Background
-    ctx.fillStyle = COLORS.background;
+    // Background gradient
+    const bg = ctx.createLinearGradient(0, 0, 0, height);
+    bg.addColorStop(0, COLORS.backgroundTop);
+    bg.addColorStop(1, COLORS.backgroundBottom);
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, width, height);
+
+    // Vignette
+    const vignette = ctx.createRadialGradient(width / 2, height / 2, Math.min(width, height) * 0.2, width / 2, height / 2, Math.max(width, height) * 0.7);
+    vignette.addColorStop(0, 'rgba(0,0,0,0)');
+    vignette.addColorStop(1, COLORS.vignette);
+    ctx.fillStyle = vignette;
     ctx.fillRect(0, 0, width, height);
 
     // Grid lines

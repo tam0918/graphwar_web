@@ -60,8 +60,8 @@ function initializeDemoGame() {
     store.addObstacle({
       id: `obstacle-${i}`,
       position: {
-        x: grid.xMin + (grid.xMax - grid.xMin) * (0.25 + Math.random() * 0.5),
-        y: grid.yMin + (grid.yMax - grid.yMin) * (0.25 + Math.random() * 0.5),
+        x: grid.xMin + (grid.xMax - grid.xMin) * (0.1 + Math.random() * 0.8),
+        y: grid.yMin + (grid.yMax - grid.yMin) * (0.1 + Math.random() * 0.8),
       },
       width: (1.2 + Math.random() * 2.8) * sizeFactor,
       height: (1.2 + Math.random() * 2.8) * sizeFactor,

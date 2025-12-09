@@ -44,11 +44,14 @@ class GameRoomManager {
 
     for (let i = 0; i < obstacleCount; i++) {
       const sizeFactor = 0.5 + Math.random() * 1.5;
+      const posX = xMin + (xMax - xMin) * (0.1 + Math.random() * 0.8); // spread 10%-90%
+      const posY = yMin + (yMax - yMin) * (0.1 + Math.random() * 0.8);
+
       obstacles.push({
         id: `obstacle-${i}`,
         position: {
-          x: Math.round((xMin + (xMax - xMin) * (0.35 + Math.random() * 0.3)) * 100) / 100,
-          y: Math.round((yMin + (yMax - yMin) * (0.3 + Math.random() * 0.4)) * 100) / 100,
+          x: Math.round(posX * 100) / 100,
+          y: Math.round(posY * 100) / 100,
         },
         width: Math.round((1.2 + Math.random() * 2.8) * sizeFactor * 100) / 100,
         height: Math.round((1.2 + Math.random() * 2.8) * sizeFactor * 100) / 100,

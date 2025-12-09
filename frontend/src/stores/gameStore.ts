@@ -103,8 +103,8 @@ function generateObstacles(gridConfig: GridConfig, count: number = 4): Obstacle[
     obstacles.push({
       id: `obstacle-${i}`,
       position: {
-        x: xMin + (xMax - xMin) * (0.25 + Math.random() * 0.5),
-        y: yMin + (yMax - yMin) * (0.25 + Math.random() * 0.5),
+        x: xMin + (xMax - xMin) * (0.1 + Math.random() * 0.8),
+        y: yMin + (yMax - yMin) * (0.1 + Math.random() * 0.8),
       },
       width: (1.2 + Math.random() * 2.8) * sizeFactor,
       height: (1.2 + Math.random() * 2.8) * sizeFactor,
