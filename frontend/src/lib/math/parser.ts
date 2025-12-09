@@ -260,19 +260,35 @@ export function generateTrajectory(
   // Offset the trajectory to start from the player's position
   // Find the y value at the player's x position
   let points = result.points;
-  
+
+  // Evaluate the function at the shooter's x to anchor path to the player each shot
+  let yAtPlayer = 0;
+  try {
+    const parsed = create(all).parse(functionString);
+    const compiled = parsed.compile();
+    const value = compiled.evaluate({ x: playerPosition.x, e: Math.E, pi: Math.PI });
+    if (typeof value === 'number' && isFinite(value)) {
+      yAtPlayer = value;
+    }
+  } catch {
+    // Fall back to first point if evaluation fails
+    yAtPlayer = points[0]?.y ?? 0;
+  }
+
   // For left direction, reverse the points so projectile moves from player toward left
   if (direction === 'left') {
     points = [...points].reverse();
   }
 
-  // Get the first point's y value for offset calculation
-  const firstY = points[0]?.y || 0;
-  
-  // Offset points so trajectory starts from player position
+  // Ensure the first point starts exactly at the player's x
+  if (!points.length || points[0].x !== playerPosition.x) {
+    points = [{ x: playerPosition.x, y: yAtPlayer }, ...points];
+  }
+
+  // Offset points so trajectory starts from player position every shot
   const offsetPoints = points.map(point => ({
     x: point.x,
-    y: point.y - firstY + playerPosition.y,
+    y: point.y - yAtPlayer + playerPosition.y,
   }));
 
   return {

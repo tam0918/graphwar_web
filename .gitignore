@@ -17,6 +17,8 @@ build/
 .cache/
 cache/
 cache/webpack/client-development/
+frontend/.next/cache/webpack/server-development/
+.pack.gz
 
 # Env
 .env
