@@ -62,6 +62,18 @@ interface GameStore extends GameState {
   isMyTurn: () => boolean;
 }
 
+// Ensure we never keep duplicate player IDs
+function upsertPlayers(existing: Player[], incoming: Player[]): Player[] {
+  const map = new Map<string, Player>();
+  for (const p of existing) {
+    map.set(p.id, p);
+  }
+  for (const p of incoming) {
+    map.set(p.id, { ...map.get(p.id), ...p });
+  }
+  return Array.from(map.values());
+}
+
 // Generate random position within grid bounds
 function randomPosition(gridConfig: GridConfig, team: 'red' | 'blue'): Point {
   const { xMin, xMax, yMin, yMax } = gridConfig;
@@ -142,7 +154,7 @@ export const useGameStore = create<GameStore>()(
 
       // Player actions
       addPlayer: (player) => set((state) => ({
-        players: [...state.players, player],
+        players: upsertPlayers(state.players, [player]),
       })),
 
       removePlayer: (playerId) => set((state) => ({
@@ -290,12 +302,12 @@ export const useGameStore = create<GameStore>()(
         const state = get();
         
         // Initialize player positions if not set
-        const initializedPlayers = state.players.map((player, index) => ({
+        const initializedPlayers: Player[] = state.players.map((player, index) => ({
           ...player,
           position: player.position.x === 0 && player.position.y === 0
             ? randomPosition(state.gridConfig, index === 0 ? 'red' : 'blue')
             : player.position,
-          team: index === 0 ? 'red' : 'blue' as const,
+          team: (index === 0 ? 'red' : 'blue') as Player['team'],
           health: GAME_CONSTANTS.MAX_HEALTH,
           maxHealth: GAME_CONSTANTS.MAX_HEALTH,
           isAlive: true,
@@ -329,10 +341,17 @@ export const useGameStore = create<GameStore>()(
       }),
 
       // State sync for multiplayer
-      syncGameState: (newState) => set((state) => ({
-        ...state,
-        ...newState,
-      })),
+      syncGameState: (newState) => set((state) => {
+        const mergedPlayers = newState.players
+          ? upsertPlayers(state.players, newState.players)
+          : state.players;
+
+        return {
+          ...state,
+          ...newState,
+          players: mergedPlayers,
+        };
+      }),
 
       // Utility functions
       getCurrentPlayer: () => {
