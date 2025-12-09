@@ -245,50 +245,28 @@ export function generateTrajectory(
   direction: 'left' | 'right',
   gridConfig: GridConfig = DEFAULT_GRID_CONFIG
 ): ParseResult {
-  // Calculate the range based on player position and direction
-  // Always use min/max correctly regardless of direction
-  const minX = direction === 'right' ? playerPosition.x : gridConfig.xMin;
-  const maxX = direction === 'right' ? gridConfig.xMax : playerPosition.x;
+  // Work in local coordinates: x=0 at shooter, positive along firing direction
+  const maxLocalX = direction === 'right'
+    ? gridConfig.xMax - playerPosition.x
+    : playerPosition.x - gridConfig.xMin;
 
-  // Parse the function from minX to maxX
-  const result = parseMathFunction(functionString, minX, maxX, gridConfig);
+  // Parse the function from x=0 to available range
+  const result = parseMathFunction(functionString, 0, maxLocalX, gridConfig);
 
   if (!result.success) {
     return result;
   }
 
-  // Offset the trajectory to start from the player's position
-  // Find the y value at the player's x position
+  // Use the first point (x=0) to anchor the curve to the shooter's y
   let points = result.points;
+  const baseY = points[0]?.y ?? 0;
 
-  // Evaluate the function at the shooter's x to anchor path to the player each shot
-  let yAtPlayer = 0;
-  try {
-    const parsed = create(all).parse(functionString);
-    const compiled = parsed.compile();
-    const value = compiled.evaluate({ x: playerPosition.x, e: Math.E, pi: Math.PI });
-    if (typeof value === 'number' && isFinite(value)) {
-      yAtPlayer = value;
-    }
-  } catch {
-    // Fall back to first point if evaluation fails
-    yAtPlayer = points[0]?.y ?? 0;
-  }
-
-  // For left direction, reverse the points so projectile moves from player toward left
-  if (direction === 'left') {
-    points = [...points].reverse();
-  }
-
-  // Ensure the first point starts exactly at the player's x
-  if (!points.length || points[0].x !== playerPosition.x) {
-    points = [{ x: playerPosition.x, y: yAtPlayer }, ...points];
-  }
-
-  // Offset points so trajectory starts from player position every shot
+  // Transform local points to world space
   const offsetPoints = points.map(point => ({
-    x: point.x,
-    y: point.y - yAtPlayer + playerPosition.y,
+    x: direction === 'right'
+      ? playerPosition.x + point.x
+      : playerPosition.x - point.x,
+    y: playerPosition.y + (point.y - baseY),
   }));
 
   return {
