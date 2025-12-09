@@ -198,12 +198,12 @@ export const MATH_ERRORS = {
  * Default grid configuration
  */
 export const DEFAULT_GRID_CONFIG: GridConfig = {
-  width: 800,
-  height: 600,
-  xMin: -20,
-  xMax: 20,
-  yMin: -15,
-  yMax: 15,
+  width: 1200,
+  height: 800,
+  xMin: -30,
+  xMax: 30,
+  yMin: -20,
+  yMax: 20,
   gridSpacing: 1,
 };
 

@@ -199,8 +199,16 @@ export function GameCanvas({
       const canvasWidth = Math.abs(bottomRight.x - topLeft.x);
       const canvasHeight = Math.abs(bottomRight.y - topLeft.y);
 
-      // Obstacle body
-      ctx.fillStyle = COLORS.obstacle;
+      // Health-based tint
+      const healthRatio = Math.max(0, obstacle.health) / 120;
+      const shade = Math.floor(100 + 80 * healthRatio);
+      ctx.fillStyle = `rgb(${shade}, ${shade + 20}, ${shade + 30})`;
+
+      // Obstacle body with subtle gradient
+      const grad = ctx.createLinearGradient(topLeft.x, topLeft.y, bottomRight.x, bottomRight.y);
+      grad.addColorStop(0, ctx.fillStyle);
+      grad.addColorStop(1, COLORS.obstacle);
+      ctx.fillStyle = grad;
       ctx.fillRect(topLeft.x, topLeft.y, canvasWidth, canvasHeight);
 
       // Border

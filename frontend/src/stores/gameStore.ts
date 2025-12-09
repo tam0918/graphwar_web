@@ -78,20 +78,25 @@ function randomPosition(gridConfig: GridConfig, team: 'red' | 'blue'): Point {
 }
 
 // Generate random obstacles
-function generateObstacles(gridConfig: GridConfig, count: number = 3): Obstacle[] {
+function generateObstacles(gridConfig: GridConfig, count: number = 4): Obstacle[] {
   const obstacles: Obstacle[] = [];
   const { xMin, xMax, yMin, yMax } = gridConfig;
 
-  for (let i = 0; i < count; i++) {
+  const obstacleCount = count + Math.floor(Math.random() * 4); // 4-7 obstacles
+
+  for (let i = 0; i < obstacleCount; i++) {
+    const sizeFactor = 0.5 + Math.random() * 1.5;
+    const health = 80 + Math.floor(Math.random() * 60);
+
     obstacles.push({
       id: `obstacle-${i}`,
       position: {
-        x: xMin + (xMax - xMin) * (0.35 + Math.random() * 0.3),
-        y: yMin + (yMax - yMin) * (0.3 + Math.random() * 0.4),
+        x: xMin + (xMax - xMin) * (0.25 + Math.random() * 0.5),
+        y: yMin + (yMax - yMin) * (0.25 + Math.random() * 0.5),
       },
-      width: 1 + Math.random() * 2,
-      height: 1 + Math.random() * 2,
-      health: 100,
+      width: (1.2 + Math.random() * 2.8) * sizeFactor,
+      height: (1.2 + Math.random() * 2.8) * sizeFactor,
+      health,
       isDestroyed: false,
     });
   }

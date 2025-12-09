@@ -40,16 +40,19 @@ class GameRoomManager {
     const obstacles: Obstacle[] = [];
     const { xMin, xMax, yMin, yMax } = gridConfig;
 
-    for (let i = 0; i < count; i++) {
+    const obstacleCount = count + Math.floor(Math.random() * 3); // add variation
+
+    for (let i = 0; i < obstacleCount; i++) {
+      const sizeFactor = 0.5 + Math.random() * 1.5;
       obstacles.push({
         id: `obstacle-${i}`,
         position: {
           x: Math.round((xMin + (xMax - xMin) * (0.35 + Math.random() * 0.3)) * 100) / 100,
           y: Math.round((yMin + (yMax - yMin) * (0.3 + Math.random() * 0.4)) * 100) / 100,
         },
-        width: Math.round((1 + Math.random() * 2) * 100) / 100,
-        height: Math.round((1 + Math.random() * 2) * 100) / 100,
-        health: 100,
+        width: Math.round((1.2 + Math.random() * 2.8) * sizeFactor * 100) / 100,
+        height: Math.round((1.2 + Math.random() * 2.8) * sizeFactor * 100) / 100,
+        health: 80 + Math.floor(Math.random() * 60),
         isDestroyed: false,
       });
     }

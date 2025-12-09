@@ -134,12 +134,12 @@ export const GAME_CONSTANTS = {
   HIT_DAMAGE: 50,
   OBSTACLE_HIT_DAMAGE: 40,
   DEFAULT_GRID: {
-    width: 800,
-    height: 600,
-    xMin: -20,
-    xMax: 20,
-    yMin: -15,
-    yMax: 15,
+    width: 1200,
+    height: 800,
+    xMin: -30,
+    xMax: 30,
+    yMin: -20,
+    yMax: 20,
     gridSpacing: 1,
   } as GridConfig,
 } as const;

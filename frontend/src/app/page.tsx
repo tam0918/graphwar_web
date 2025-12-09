@@ -15,13 +15,27 @@ import { UI_TEXT, GAME_CONSTANTS, DEFAULT_GRID_CONFIG, Point } from '@/types';
 // In production, this would connect via Socket.io
 function initializeDemoGame() {
   const store = useGameStore.getState();
+
+  const grid = DEFAULT_GRID_CONFIG;
+
+  const randomPos = (team: 'red' | 'blue') => {
+    const { xMin, xMax, yMin, yMax } = grid;
+    const xRange = team === 'red'
+      ? { min: xMin + 2, max: xMin + (xMax - xMin) * 0.3 }
+      : { min: xMax - (xMax - xMin) * 0.3, max: xMax - 2 };
+
+    return {
+      x: xRange.min + Math.random() * (xRange.max - xRange.min),
+      y: yMin + 2 + Math.random() * (yMax - yMin - 4),
+    } as const;
+  };
   
   // Create two demo players
   store.addPlayer({
     id: 'player-1',
     name: 'Người chơi 1',
     team: 'red',
-    position: { x: -15, y: 0 },
+    position: randomPos('red'),
     health: GAME_CONSTANTS.MAX_HEALTH,
     maxHealth: GAME_CONSTANTS.MAX_HEALTH,
     isAlive: true,
@@ -31,30 +45,30 @@ function initializeDemoGame() {
     id: 'player-2',
     name: 'Người chơi 2',
     team: 'blue',
-    position: { x: 15, y: 0 },
+    position: randomPos('blue'),
     health: GAME_CONSTANTS.MAX_HEALTH,
     maxHealth: GAME_CONSTANTS.MAX_HEALTH,
     isAlive: true,
   });
 
-  // Add some obstacles
-  store.addObstacle({
-    id: 'obstacle-1',
-    position: { x: -2, y: 5 },
-    width: 2,
-    height: 3,
-    health: 100,
-    isDestroyed: false,
-  });
+  // Add randomized obstacles for demo variety
+  const obstacleCount = 4 + Math.floor(Math.random() * 4);
+  for (let i = 0; i < obstacleCount; i++) {
+    const sizeFactor = 0.5 + Math.random() * 1.5;
+    const health = 80 + Math.floor(Math.random() * 60);
 
-  store.addObstacle({
-    id: 'obstacle-2',
-    position: { x: 0, y: -3 },
-    width: 3,
-    height: 2,
-    health: 100,
-    isDestroyed: false,
-  });
+    store.addObstacle({
+      id: `obstacle-${i}`,
+      position: {
+        x: grid.xMin + (grid.xMax - grid.xMin) * (0.25 + Math.random() * 0.5),
+        y: grid.yMin + (grid.yMax - grid.yMin) * (0.25 + Math.random() * 0.5),
+      },
+      width: (1.2 + Math.random() * 2.8) * sizeFactor,
+      height: (1.2 + Math.random() * 2.8) * sizeFactor,
+      health,
+      isDestroyed: false,
+    });
+  }
 
   // Set my player ID for local play
   store.setMyPlayerId('player-1');
