@@ -119,8 +119,27 @@ function sanitizeInput(input: string, mode: GameMode = 'normal'): string {
   
   // Replace common alternatives
   sanitized = sanitized.replace(/\*\*/g, '^'); // ** to ^
+  // Normalize other common power symbols to '^'
+  sanitized = sanitized.replace(/[ˆ∧]/g, '^'); // U+02C6, U+2227
   sanitized = sanitized.replace(/÷/g, '/');     // Division symbol
   sanitized = sanitized.replace(/×/g, '*');     // Multiplication symbol
+
+  // Normalize unicode superscript digits (e.g., x² -> x^2, (x+1)³ -> (x+1)^3)
+  const superscriptMap: Record<string, string> = {
+    '⁰': '0',
+    '¹': '1',
+    '²': '2',
+    '³': '3',
+    '⁴': '4',
+    '⁵': '5',
+    '⁶': '6',
+    '⁷': '7',
+    '⁸': '8',
+    '⁹': '9',
+  };
+  sanitized = sanitized.replace(/([a-z\)\]])\s*([⁰¹²³⁴⁵⁶⁷⁸⁹])/g, (_, base: string, sup: string) => {
+    return `${base}^${superscriptMap[sup] ?? sup}`;
+  });
   
   // Add implicit multiplication.
   // IMPORTANT: Keep function calls intact (e.g., sin(x), log10(x)) — do NOT turn into sin*(x) or log*10.
@@ -364,7 +383,10 @@ function generateNormalTrajectory(
   // offset = startY - f(startX)
   let offset: number;
   try {
-    const f0 = compiled.evaluate({ x: startX, e: Math.E, pi: Math.PI });
+    // Graphwar-style translation, but in practice it's much more intuitive
+    // (and avoids "x^2 looks like x=0") to anchor the user's function to the shooter.
+    // We evaluate using a local coordinate u where u=0 at the shooter.
+    const f0 = compiled.evaluate({ x: 0, e: Math.E, pi: Math.PI });
     if (!isValidNumber(f0)) {
       return { success: false, points: [], error: MATH_ERRORS.INVALID_RESULT };
     }
@@ -373,18 +395,20 @@ function generateNormalTrajectory(
     return { success: false, points: [], error: MATH_ERRORS.INVALID_RESULT };
   }
 
-  let x = startX;
-  
+  // Walk forward from the shooter along +x in (possibly mirrored) function space.
+  // u is the local coordinate; xAbs is the world-space x (in the function space before mirroring back).
+  let u = 0;
   for (let i = 0; i < maxSteps; i++) {
     try {
-      const y = compiled.evaluate({ x, e: Math.E, pi: Math.PI }) + offset;
+      const xAbs = startX + u;
+      const y = compiled.evaluate({ x: u, e: Math.E, pi: Math.PI }) + offset;
       
       if (!isValidNumber(y)) {
         break;
       }
       
       // Convert back to world coordinates
-      const worldX = inverted ? -x : x;
+      const worldX = inverted ? -xAbs : xAbs;
       const worldY = y;
       
       // Check bounds
@@ -403,7 +427,7 @@ function generateNormalTrajectory(
       points.push({ x: worldX, y: worldY });
       
       // Move forward
-      x += step;
+      u += step;
     } catch {
       break;
     }
