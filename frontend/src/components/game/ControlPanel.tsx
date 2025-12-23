@@ -3,19 +3,24 @@
 /**
  * ControlPanel Component
  * User interface for function input and game controls
- * All labels and text in Vietnamese
+ * Updated to support game modes (normal, ODE) and angle input
  */
 
 import React, { useState, useCallback, useEffect } from 'react';
-import { UI_TEXT, MATH_ERRORS } from '@/types';
+import { UI_TEXT, MATH_ERRORS, GameMode, GAME_CONSTANTS } from '@/types';
 import { validateFunction, getExampleFunctions } from '@/lib/math';
 
 interface ControlPanelProps {
   isMyTurn: boolean;
   isGameActive: boolean;
   currentPhase: string;
+  gameMode: GameMode;
+  currentAngle?: number;
   onFire: (functionString: string) => void;
+  onPreview?: (functionString: string) => void;
   onReady?: () => void;
+  onGameModeChange?: (mode: GameMode) => void;
+  onAngleChange?: (angle: number) => void;
   playerName?: string;
   opponentName?: string;
   disabled?: boolean;
@@ -25,8 +30,13 @@ export function ControlPanel({
   isMyTurn,
   isGameActive,
   currentPhase,
+  gameMode = 'normal',
+  currentAngle = 0,
   onFire,
+  onPreview,
   onReady,
+  onGameModeChange,
+  onAngleChange,
   playerName = 'Người chơi',
   opponentName = 'Đối thủ',
   disabled = false,
@@ -34,17 +44,31 @@ export function ControlPanel({
   const [functionInput, setFunctionInput] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
   const [showExamples, setShowExamples] = useState(false);
+  const [history, setHistory] = useState<string[]>([]);
+  const [angleInput, setAngleInput] = useState(currentAngle.toString());
 
-  // Validate input in real-time
+  // Update angle input when currentAngle prop changes
+  useEffect(() => {
+    setAngleInput(currentAngle.toString());
+  }, [currentAngle]);
+
+  // Validate input in real-time and trigger preview
   useEffect(() => {
     if (!functionInput.trim()) {
       setValidationError(null);
+      onPreview?.('');
       return;
     }
 
-    const result = validateFunction(functionInput);
+    const result = validateFunction(functionInput, gameMode);
     setValidationError(result.valid ? null : result.error || MATH_ERRORS.PARSE_ERROR);
-  }, [functionInput]);
+    
+    if (result.valid) {
+      onPreview?.(functionInput);
+    } else {
+      onPreview?.('');
+    }
+  }, [functionInput, gameMode, onPreview]);
 
   const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
@@ -54,23 +78,32 @@ export function ControlPanel({
       return;
     }
 
-    const result = validateFunction(functionInput);
+    const result = validateFunction(functionInput, gameMode);
     if (!result.valid) {
       setValidationError(result.error || MATH_ERRORS.PARSE_ERROR);
       return;
     }
 
     onFire(functionInput);
+    setHistory(prev => [functionInput, ...prev].slice(0, 5));
     setFunctionInput('');
     setValidationError(null);
-  }, [functionInput, onFire]);
+  }, [functionInput, gameMode, onFire]);
 
   const handleExampleClick = useCallback((example: string) => {
     setFunctionInput(example);
     setShowExamples(false);
   }, []);
 
-  const examples = getExampleFunctions();
+  const handleAngleChange = useCallback((value: string) => {
+    setAngleInput(value);
+    const angle = parseFloat(value);
+    if (!isNaN(angle) && angle >= -90 && angle <= 90) {
+      onAngleChange?.(angle);
+    }
+  }, [onAngleChange]);
+
+  const examples = getExampleFunctions(gameMode);
 
   // Get phase display text
   const getPhaseText = (phase: string): string => {
@@ -87,8 +120,76 @@ export function ControlPanel({
     return phaseMap[phase] || phase;
   };
 
+  // Get label for function input based on game mode
+  const getFunctionLabel = (): string => {
+    switch (gameMode) {
+      case 'first_order_ode':
+        return "Hàm số y' = f(x, y)";
+      case 'second_order_ode':
+        return "Hàm số y'' = f(x, y, y')";
+      default:
+        return "Hàm số y = f(x)";
+    }
+  };
+
+  // Get input placeholder based on game mode
+  const getPlaceholder = (): string => {
+    switch (gameMode) {
+      case 'first_order_ode':
+        return "Ví dụ: x + y, sin(x)*y";
+      case 'second_order_ode':
+        return "Ví dụ: -y, x - y'";
+      default:
+        return UI_TEXT.INPUT_PLACEHOLDER;
+    }
+  };
+
   return (
     <div className="bg-gray-900/90 backdrop-blur-sm rounded-xl p-6 shadow-2xl border border-gray-700">
+      {/* Game Mode Selector */}
+      {onGameModeChange && (
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            Chế độ chơi
+          </label>
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              type="button"
+              onClick={() => onGameModeChange('normal')}
+              className={`px-3 py-2 text-xs rounded-lg font-medium transition-all ${
+                gameMode === 'normal'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
+            >
+              {UI_TEXT.MODE_NORMAL}
+            </button>
+            <button
+              type="button"
+              onClick={() => onGameModeChange('first_order_ode')}
+              className={`px-3 py-2 text-xs rounded-lg font-medium transition-all ${
+                gameMode === 'first_order_ode'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
+            >
+              {UI_TEXT.MODE_ODE1}
+            </button>
+            <button
+              type="button"
+              onClick={() => onGameModeChange('second_order_ode')}
+              className={`px-3 py-2 text-xs rounded-lg font-medium transition-all ${
+                gameMode === 'second_order_ode'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
+            >
+              {UI_TEXT.MODE_ODE2}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Turn Indicator */}
       <div className="mb-6">
         <div className={`
@@ -110,18 +211,50 @@ export function ControlPanel({
         </span>
       </div>
 
+      {/* Angle Input for Second Order ODE */}
+      {gameMode === 'second_order_ode' && (
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            Góc bắn (độ): y'(0)
+          </label>
+          <div className="flex gap-2 items-center">
+            <input
+              type="range"
+              min="-90"
+              max="90"
+              value={angleInput}
+              onChange={(e) => handleAngleChange(e.target.value)}
+              disabled={!isMyTurn || !isGameActive || disabled}
+              className="flex-1 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+            />
+            <input
+              type="number"
+              min="-90"
+              max="90"
+              value={angleInput}
+              onChange={(e) => handleAngleChange(e.target.value)}
+              disabled={!isMyTurn || !isGameActive || disabled}
+              className="w-16 px-2 py-1 bg-gray-800 border border-gray-600 rounded text-white text-center font-mono text-sm"
+            />
+          </div>
+          <p className="mt-1 text-xs text-gray-500">
+            Góc ban đầu của quỹ đạo (-90° đến 90°)
+          </p>
+        </div>
+      )}
+
       {/* Function Input Form */}
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="relative">
           <label className="block text-sm font-medium text-gray-300 mb-2">
-            Hàm số y = f(x)
+            {getFunctionLabel()}
           </label>
           <div className="flex gap-2">
             <input
               type="text"
               value={functionInput}
               onChange={(e) => setFunctionInput(e.target.value)}
-              placeholder={UI_TEXT.INPUT_PLACEHOLDER}
+              placeholder={getPlaceholder()}
               disabled={!isMyTurn || !isGameActive || disabled}
               className={`
                 flex-1 px-4 py-3 bg-gray-800 border rounded-lg
@@ -164,13 +297,33 @@ export function ControlPanel({
         </div>
 
         {/* Examples Toggle */}
-        <button
-          type="button"
-          onClick={() => setShowExamples(!showExamples)}
-          className="text-sm text-indigo-400 hover:text-indigo-300 transition-colors"
-        >
-          {showExamples ? '▼' : '▶'} Xem hàm mẫu
-        </button>
+        <div className="flex flex-col gap-4">
+          <button
+            type="button"
+            onClick={() => setShowExamples(!showExamples)}
+            className="text-sm text-indigo-400 hover:text-indigo-300 transition-colors text-left"
+          >
+            {showExamples ? '▼' : '▶'} Xem hàm mẫu
+          </button>
+
+          {history.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-bold text-gray-500 uppercase">Lịch sử gần đây</p>
+              <div className="flex flex-wrap gap-2">
+                {history.map((h, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setFunctionInput(h)}
+                    className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1 rounded border border-gray-700 transition-colors font-mono"
+                  >
+                    {h}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Examples List */}
         {showExamples && (

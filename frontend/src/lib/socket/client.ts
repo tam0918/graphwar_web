@@ -5,7 +5,7 @@
 
 import { io, Socket } from 'socket.io-client';
 import { useGameStore } from '@/stores';
-import { Point, Player, TurnState, GameState } from '@/types';
+import { Point, Player, TurnState, GameState, GAME_CONSTANTS } from '@/types';
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
 
@@ -23,6 +23,8 @@ interface ServerEvents {
   playerHit: (data: { playerId: string; damage: number; newHealth: number }) => void;
   obstacleDamaged: (data: { obstacle: GameState['obstacles'][number] }) => void;
   obstacleDestroyed: (data: { obstacleId: string }) => void;
+  soldierHit: (data: { playerId: string; soldierIndex: number }) => void;
+  terrainHit: (data: { x: number; y: number; radius: number }) => void;
   turnEnded: (data: { turn: TurnState }) => void;
   gameOver: (data: { winnerId: string | null; winnerName: string; winnerTeam: Player['team'] | null }) => void;
   playerDisconnected: (data: { playerId: string; playerName: string }) => void;
@@ -84,10 +86,23 @@ export function connectSocket(): Socket {
     store.syncGameState(gameState);
   });
 
-  socket.on('projectileFired', ({ playerId, functionString }) => {
+  socket.on('turnUpdate', ({ turn }) => {
+    store.syncGameState({ turn });
+  });
+
+  socket.on('projectileFired', ({ playerId, functionString, soldierIndex, firingAngle }) => {
     console.log('[Socket] Projectile fired by:', playerId);
-    // The actual firing is handled by the component using the function string
-    store.setPhase('animating');
+    if (typeof soldierIndex === 'number' && typeof firingAngle === 'number') {
+      // Keep shooter angle in sync so trajectory is consistent for ODE2 mode
+      const current = useGameStore.getState();
+      const shooter = current.players.find((p) => p.id === playerId);
+      if (shooter?.soldiers?.[soldierIndex]) {
+        store.setSoldierAngle(playerId, soldierIndex, firingAngle);
+      }
+      store.syncGameState({ turn: { ...current.turn, currentSoldierIndex: soldierIndex } });
+    }
+    // Trigger the projectile animation in the store
+    store.fireProjectileForPlayer(playerId, functionString);
   });
 
   socket.on('playerHit', ({ playerId, damage, newHealth }) => {
@@ -106,6 +121,16 @@ export function connectSocket(): Socket {
   socket.on('obstacleDestroyed', ({ obstacleId }) => {
     console.log('[Socket] Obstacle destroyed:', obstacleId);
     store.destroyObstacle(obstacleId);
+  });
+
+  socket.on('soldierHit', ({ playerId, soldierIndex }) => {
+    console.log('[Socket] Soldier hit:', playerId, soldierIndex);
+    store.killSoldier(playerId, soldierIndex);
+  });
+
+  socket.on('terrainHit', ({ x, y, radius }) => {
+    console.log('[Socket] Terrain hit:', x, y, radius);
+    store.addTerrainExplosion(x, y, radius);
   });
 
   socket.on('turnEnded', ({ turn }) => {
@@ -178,18 +203,58 @@ export function submitFunction(roomId: string, playerId: string, functionString:
     console.error('[Socket] Not connected');
     return;
   }
-  socket.emit('submitFunction', { roomId, playerId, functionString });
+  const state = useGameStore.getState();
+  const shooter = state.players.find((p) => p.id === playerId);
+  const soldierIndex = state.turn.currentSoldierIndex || 0;
+  const firingAngle = shooter?.soldiers?.[soldierIndex]?.angle ?? 0;
+  socket.emit('submitFunction', { roomId, playerId, functionString, soldierIndex, firingAngle });
 }
 
-/**
- * Report projectile hit
- */
-export function reportHit(roomId: string, targetType: 'player' | 'obstacle', targetId: string): void {
+export function reportHit(payload: {
+  roomId: string;
+  type: 'soldier' | 'obstacle' | 'terrain' | 'boundary' | 'miss';
+  targetPlayerId?: string;
+  targetSoldierIndex?: number;
+  targetObstacleId?: string;
+  impactPoint?: { x: number; y: number };
+}): void {
   if (!socket?.connected) {
     console.error('[Socket] Not connected');
     return;
   }
-  socket.emit('projectileHit', { roomId, targetType, targetId });
+
+  // Only send meaningful hits; otherwise treat as miss
+  if (payload.type === 'soldier' && payload.targetPlayerId != null && payload.targetSoldierIndex != null) {
+    socket.emit('projectileHit', {
+      roomId: payload.roomId,
+      targetType: 'soldier',
+      targetPlayerId: payload.targetPlayerId,
+      targetSoldierIndex: payload.targetSoldierIndex,
+    });
+    return;
+  }
+
+  if (payload.type === 'obstacle' && payload.targetObstacleId) {
+    socket.emit('projectileHit', {
+      roomId: payload.roomId,
+      targetType: 'obstacle',
+      obstacleId: payload.targetObstacleId,
+    });
+    return;
+  }
+
+  if (payload.type === 'terrain' && payload.impactPoint) {
+    socket.emit('projectileHit', {
+      roomId: payload.roomId,
+      targetType: 'terrain',
+      x: payload.impactPoint.x,
+      y: payload.impactPoint.y,
+      radius: GAME_CONSTANTS.EXPLOSION_RADIUS,
+    });
+    return;
+  }
+
+  socket.emit('projectileMiss', { roomId: payload.roomId });
 }
 
 /**

@@ -3,80 +3,60 @@
 /**
  * Main Game Page
  * Integrates all game components
+ * Updated to support original Graphwar mechanics
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { GameCanvas, ControlPanel, GameInfo } from '@/components/game';
-import { useGameStore, useIsMyTurn, useGamePhase } from '@/stores';
+import { GameCanvas, ControlPanel, GameInfo, Chat } from '@/components/game';
+import { useGameStore, useIsMyTurn, useGamePhase, useGameMode, useTerrain, useCurrentSoldier } from '@/stores';
 import { parseMathFunction, generateTrajectory } from '@/lib/math';
-import { UI_TEXT, GAME_CONSTANTS, DEFAULT_GRID_CONFIG, Point } from '@/types';
+import { UI_TEXT, GAME_CONSTANTS, DEFAULT_GRID_CONFIG, Point, GameMode, Soldier } from '@/types';
+import { reportHit, reportMiss, submitFunction } from '@/lib/socket';
 
 // For demo purposes, create a single-player local game
 // In production, this would connect via Socket.io
 function initializeDemoGame() {
   const store = useGameStore.getState();
-
+  
+  // Use startGame to properly initialize with soldiers and terrain
+  // First set up demo players without soldiers
   const grid = DEFAULT_GRID_CONFIG;
 
-  const randomPos = (team: 'red' | 'blue') => {
-    const { xMin, xMax, yMin, yMax } = grid;
-    const xRange = team === 'red'
-      ? { min: xMin + 2, max: xMin + (xMax - xMin) * 0.3 }
-      : { min: xMax - (xMax - xMin) * 0.3, max: xMax - 2 };
-
-    return {
-      x: xRange.min + Math.random() * (xRange.max - xRange.min),
-      y: yMin + 2 + Math.random() * (yMax - yMin - 4),
-    } as const;
-  };
-  
-  // Create two demo players
-  store.addPlayer({
+  const demoPlayer1 = {
     id: 'player-1',
     name: 'Người chơi 1',
-    team: 'red',
-    position: randomPos('red'),
+    team: 'red' as const,
+    color: '#ff6b6b',
+    soldiers: [] as Soldier[],
+    currentSoldierIndex: 0,
+    isAlive: true,
+    position: { x: 0, y: 0 },
     health: GAME_CONSTANTS.MAX_HEALTH,
     maxHealth: GAME_CONSTANTS.MAX_HEALTH,
-    isAlive: true,
-  });
+  };
 
-  store.addPlayer({
+  const demoPlayer2 = {
     id: 'player-2',
     name: 'Người chơi 2',
-    team: 'blue',
-    position: randomPos('blue'),
+    team: 'blue' as const,
+    color: '#4ecdc4',
+    soldiers: [] as Soldier[],
+    currentSoldierIndex: 0,
+    isAlive: true,
+    position: { x: 0, y: 0 },
     health: GAME_CONSTANTS.MAX_HEALTH,
     maxHealth: GAME_CONSTANTS.MAX_HEALTH,
-    isAlive: true,
-  });
+  };
 
-  // Add randomized obstacles for demo variety
-  const obstacleCount = 4 + Math.floor(Math.random() * 4);
-  for (let i = 0; i < obstacleCount; i++) {
-    const sizeFactor = 0.5 + Math.random() * 1.5;
-    const health = 80 + Math.floor(Math.random() * 60);
-
-    store.addObstacle({
-      id: `obstacle-${i}`,
-      position: {
-        x: grid.xMin + (grid.xMax - grid.xMin) * (0.1 + Math.random() * 0.8),
-        y: grid.yMin + (grid.yMax - grid.yMin) * (0.1 + Math.random() * 0.8),
-      },
-      width: (1.2 + Math.random() * 2.8) * sizeFactor,
-      height: (1.2 + Math.random() * 2.8) * sizeFactor,
-      health,
-      isDestroyed: false,
-    });
-  }
+  store.addPlayer(demoPlayer1);
+  store.addPlayer(demoPlayer2);
 
   // Set my player ID for local play
   store.setMyPlayerId('player-1');
   store.setRoomId('LOCAL');
 
-  // Start the game
-  store.setCurrentPlayer('player-1');
-  store.setPhase('input');
+  // Use startGame to initialize soldiers and terrain
+  store.startGame();
 }
 
 export default function GamePage() {
@@ -88,6 +68,7 @@ export default function GamePage() {
   // Store selectors
   const players = useGameStore((state) => state.players);
   const obstacles = useGameStore((state) => state.obstacles);
+  const terrain = useTerrain();
   const projectile = useGameStore((state) => state.projectile);
   const turn = useGameStore((state) => state.turn);
   const gridConfig = useGameStore((state) => state.gridConfig);
@@ -96,13 +77,19 @@ export default function GamePage() {
   const winner = useGameStore((state) => state.winner);
   const isMyTurn = useIsMyTurn();
   const phase = useGamePhase();
+  const gameMode = useGameMode();
+  const currentSoldier = useCurrentSoldier();
 
   // Store actions
   const fireProjectile = useGameStore((state) => state.fireProjectile);
   const nextTurn = useGameStore((state) => state.nextTurn);
+  const killSoldier = useGameStore((state) => state.killSoldier);
   const damagePlayer = useGameStore((state) => state.damagePlayer);
   const damageObstacle = useGameStore((state) => state.damageObstacle);
+  const addTerrainExplosion = useGameStore((state) => state.addTerrainExplosion);
   const setPhase = useGameStore((state) => state.setPhase);
+  const setGameMode = useGameStore((state) => state.setGameMode);
+  const setSoldierAngle = useGameStore((state) => state.setSoldierAngle);
   const clearProjectile = useGameStore((state) => state.clearProjectile);
   const resetGame = useGameStore((state) => state.resetGame);
 
@@ -129,19 +116,40 @@ export default function GamePage() {
       setTrajectoryPreview([]);
       return;
     }
+    
+    // Get current soldier position
+    const soldierIndex = turn.currentSoldierIndex || 0;
+    const soldier = currentPlayer.soldiers?.[soldierIndex];
+    const position = soldier?.position || currentPlayer.position;
+    const angle = soldier?.angle || 0;
 
     const direction = currentPlayer.team === 'red' ? 'right' : 'left';
-    const result = generateTrajectory(functionString, currentPlayer.position, direction, gridConfig);
+    const result = generateTrajectory(
+      functionString, 
+      position, 
+      direction, 
+      gridConfig,
+      gameMode,
+      angle,
+      terrain || undefined
+    );
     
     if (result.success) {
       setTrajectoryPreview(result.points);
     } else {
       setTrajectoryPreview([]);
     }
-  }, [players, turn.currentPlayerId, gridConfig]);
+  }, [players, turn.currentPlayerId, turn.currentSoldierIndex, gridConfig, gameMode, terrain]);
 
   // Handle fire action
   const handleFire = useCallback((functionString: string) => {
+    if (roomId && roomId !== 'LOCAL' && myPlayerId) {
+      submitFunction(roomId, myPlayerId, functionString);
+      setCurrentFunction(functionString);
+      setTrajectoryPreview([]);
+      return;
+    }
+
     const success = fireProjectile(functionString);
     
     if (success) {
@@ -151,20 +159,54 @@ export default function GamePage() {
     } else {
       showNotification('Lỗi: Không thể bắn với hàm số này');
     }
-  }, [fireProjectile, showNotification]);
+  }, [fireProjectile, showNotification, roomId, myPlayerId]);
+
+  // Handle game mode change
+  const handleGameModeChange = useCallback((mode: GameMode) => {
+    setGameMode(mode);
+    setTrajectoryPreview([]);
+    setCurrentFunction('');
+  }, [setGameMode]);
+
+  // Handle angle change for 2nd order ODE
+  const handleAngleChange = useCallback((angle: number) => {
+    if (myPlayerId) {
+      const soldierIndex = turn.currentSoldierIndex || 0;
+      setSoldierAngle(myPlayerId, soldierIndex, angle);
+    }
+  }, [myPlayerId, turn.currentSoldierIndex, setSoldierAngle]);
 
   // Handle animation complete
   const handleAnimationComplete = useCallback((result: {
-    type: 'player' | 'obstacle' | 'boundary' | 'miss';
-    targetId?: string;
+    type: 'soldier' | 'obstacle' | 'terrain' | 'boundary' | 'miss';
+    targetPlayerId?: string;
+    targetSoldierIndex?: number;
+    targetObstacleId?: string;
+    impactPoint?: { x: number; y: number };
   }) => {
     // Clear projectile so we only resolve once
     clearProjectile();
 
-    if (result.type === 'player' && result.targetId) {
-      damagePlayer(result.targetId, GAME_CONSTANTS.HIT_DAMAGE);
-      const hitPlayer = players.find((p) => p.id === result.targetId);
-      showNotification(`${hitPlayer?.name ?? 'Đối thủ'} ${UI_TEXT.MSG_PLAYER_HIT}`);
+    // If multiplayer, report to server and let server handle state
+    if (roomId && roomId !== 'LOCAL') {
+      reportHit({
+        roomId,
+        type: result.type,
+        targetPlayerId: result.targetPlayerId,
+        targetSoldierIndex: result.targetSoldierIndex,
+        targetObstacleId: result.targetObstacleId,
+        impactPoint: result.impactPoint,
+      });
+      return;
+    }
+
+    // Local play logic
+    if (result.type === 'soldier' && result.targetPlayerId) {
+      if (result.targetSoldierIndex !== undefined) {
+        killSoldier(result.targetPlayerId, result.targetSoldierIndex);
+      }
+      const hitPlayer = players.find((p) => p.id === result.targetPlayerId);
+      showNotification(`${hitPlayer?.name ?? 'Đối thủ'} - ${UI_TEXT.MSG_SOLDIER_KILLED}`);
       setPhase('hit');
 
       setTimeout(() => {
@@ -179,9 +221,22 @@ export default function GamePage() {
       }, 800);
       return;
     }
+    
+    if (result.type === 'terrain') {
+      // Add explosion crater at impact point
+      setPhase('hit');
+      showNotification(UI_TEXT.MSG_FUNCTION_EXPLODED);
+      if (result.impactPoint) {
+        addTerrainExplosion(result.impactPoint.x, result.impactPoint.y, GAME_CONSTANTS.EXPLOSION_RADIUS);
+      }
+      setTimeout(() => {
+        nextTurn();
+      }, 500);
+      return;
+    }
 
-    if (result.type === 'obstacle' && result.targetId) {
-      damageObstacle(result.targetId, GAME_CONSTANTS.OBSTACLE_HIT_DAMAGE);
+    if (result.type === 'obstacle' && result.targetObstacleId) {
+      damageObstacle(result.targetObstacleId, GAME_CONSTANTS.OBSTACLE_HIT_DAMAGE);
       setPhase('hit');
       showNotification(UI_TEXT.MSG_OBSTACLE_DESTROYED);
       setTimeout(() => {
@@ -196,7 +251,7 @@ export default function GamePage() {
     setTimeout(() => {
       nextTurn();
     }, 400);
-  }, [clearProjectile, damageObstacle, damagePlayer, nextTurn, players, setPhase, showNotification]);
+  }, [addTerrainExplosion, clearProjectile, damageObstacle, killSoldier, nextTurn, players, setPhase, showNotification, roomId]);
 
   // Handle new game
   const handleNewGame = useCallback(() => {
@@ -212,6 +267,15 @@ export default function GamePage() {
   const opponent = players.find(p => p.id !== myPlayerId);
   const canShoot = roomId === 'LOCAL' ? true : isMyTurn;
 
+  // Get mode label for display
+  const getModeLabel = () => {
+    switch (gameMode) {
+      case 'first_order_ode': return UI_TEXT.MODE_ODE1;
+      case 'second_order_ode': return UI_TEXT.MODE_ODE2;
+      default: return UI_TEXT.MODE_NORMAL;
+    }
+  };
+
   return (
     <div className="game-container min-h-screen p-4 md:p-8">
       {/* Header */}
@@ -221,6 +285,9 @@ export default function GamePage() {
         </h1>
         <p className="text-gray-400">
           Trò chơi pháo hàm số - Sử dụng toán học để chiến thắng!
+        </p>
+        <p className="text-sm text-indigo-400 mt-1">
+          Chế độ: {getModeLabel()}
         </p>
       </header>
 
@@ -256,14 +323,17 @@ export default function GamePage() {
       {/* Main Game Layout */}
       <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Game Info Panel (Left) */}
-        <div className="lg:col-span-1">
+        <div className="lg:col-span-1 space-y-6">
           <GameInfo
             players={players}
             currentPlayerId={turn.currentPlayerId}
             myPlayerId={myPlayerId}
             turnNumber={turn.turnNumber}
-            roomId="LOCAL"
+            roomId={roomId || "LOCAL"}
+            timeLeft={turn.timeLeft}
           />
+          
+          <Chat />
         </div>
 
         {/* Canvas (Center) */}
@@ -273,19 +343,24 @@ export default function GamePage() {
               gridConfig={gridConfig}
               players={players}
               obstacles={obstacles}
+              terrain={terrain}
               projectile={projectile}
               trajectoryPath={trajectoryPreview}
+              currentSoldierIndex={turn.currentSoldierIndex || 0}
               onAnimationComplete={handleAnimationComplete}
               className="w-full"
             />
           </div>
 
-          {/* Function Preview */}
-          {currentFunction && (
+          {/* Function Display */}
+          {(currentFunction || turn.lastFunction) && (
             <div className="mt-4 text-center">
-              <span className="text-gray-400">Hàm số: </span>
+              <span className="text-gray-400">
+                {phase === 'animating' || phase === 'firing' ? 'Đang bắn: ' : 'Hàm số: '}
+              </span>
               <span className="font-mono text-yellow-400 text-lg">
-                y = {currentFunction}
+                {gameMode === 'normal' ? 'y = ' : gameMode === 'first_order_ode' ? "y' = " : "y'' = "}
+                {phase === 'animating' || phase === 'firing' ? turn.lastFunction : currentFunction}
               </span>
             </div>
           )}
@@ -297,7 +372,12 @@ export default function GamePage() {
             isMyTurn={canShoot}
             isGameActive={phase === 'input'}
             currentPhase={phase}
+            gameMode={gameMode}
+            currentAngle={currentSoldier?.angle || 0}
             onFire={handleFire}
+            onPreview={handlePreviewFunction}
+            onGameModeChange={handleGameModeChange}
+            onAngleChange={handleAngleChange}
             playerName={currentPlayer?.name}
             opponentName={players.find(p => p.id !== turn.currentPlayerId)?.name}
             disabled={phase === 'animating' || phase === 'firing'}
@@ -307,10 +387,26 @@ export default function GamePage() {
           <div className="mt-4 p-4 bg-gray-800/50 rounded-lg text-sm text-gray-400">
             <h3 className="font-bold text-white mb-2">💡 Hướng dẫn</h3>
             <ul className="space-y-1 list-disc list-inside">
-              <li>Nhập hàm số như <code className="text-yellow-400">sin(x)</code></li>
-              <li>Đường đạn sẽ bay theo đồ thị hàm số</li>
-              <li>Bắn trúng đối thủ để gây sát thương</li>
-              <li>Người còn lại cuối cùng thắng!</li>
+              {gameMode === 'normal' && (
+                <>
+                  <li>Nhập hàm số như <code className="text-yellow-400">sin(x)</code></li>
+                  <li>Đường đạn bay theo đồ thị y = f(x)</li>
+                </>
+              )}
+              {gameMode === 'first_order_ode' && (
+                <>
+                  <li>Nhập y' = f(x,y) như <code className="text-yellow-400">-y/3</code></li>
+                  <li>Đường đạn bay theo nghiệm ODE bậc 1</li>
+                </>
+              )}
+              {gameMode === 'second_order_ode' && (
+                <>
+                  <li>Nhập y'' = f(x,y,y') như <code className="text-yellow-400">-y</code></li>
+                  <li>Điều chỉnh góc bắn ban đầu</li>
+                </>
+              )}
+              <li>Bắn trúng lính đối phương để tiêu diệt</li>
+              <li>Tiêu diệt hết lính đối phương thắng!</li>
             </ul>
           </div>
         </div>

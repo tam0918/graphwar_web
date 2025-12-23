@@ -17,7 +17,40 @@ import {
 type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 type GameServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 
+const roomTimers: Map<string, NodeJS.Timeout> = new Map();
+
 export function setupSocketHandlers(io: GameServer): void {
+  const startRoomTimer = (roomId: string) => {
+    if (roomTimers.has(roomId)) {
+      clearInterval(roomTimers.get(roomId)!);
+    }
+
+    const timer = setInterval(() => {
+      const room = roomManager.getRoom(roomId);
+      if (!room || room.state.turn.phase === 'gameover') {
+        clearInterval(timer);
+        roomTimers.delete(roomId);
+        return;
+      }
+
+      // Only decrement if in input phase
+      if (room.state.turn.phase === 'input' && room.state.turn.timeLeft !== undefined) {
+        room.state.turn.timeLeft -= 1;
+
+        if (room.state.turn.timeLeft <= 0) {
+          const nextState = roomManager.nextTurn(roomId);
+          if (nextState) {
+            io.to(roomId).emit('turnEnded', { turn: nextState.turn });
+          }
+        } else {
+          io.to(roomId).emit('turnUpdate', { turn: room.state.turn });
+        }
+      }
+    }, 1000);
+
+    roomTimers.set(roomId, timer);
+  };
+
   io.on('connection', (socket: GameSocket) => {
     console.log(`[Socket] Client connected: ${socket.id}`);
 
@@ -92,6 +125,7 @@ export function setupSocketHandlers(io: GameServer): void {
           const gameState = roomManager.startGame(roomId);
           if (gameState) {
             io.to(roomId).emit('gameStarted', { gameState });
+            startRoomTimer(roomId);
           }
         }
 
@@ -105,18 +139,45 @@ export function setupSocketHandlers(io: GameServer): void {
     /**
      * Player submits a function to fire
      */
-    socket.on('submitFunction', ({ roomId, playerId, functionString }) => {
+    socket.on('submitFunction', ({ roomId, playerId, functionString, soldierIndex, firingAngle }) => {
       try {
+        // Always trust server-side socket identity instead of client payload
+        const actualPlayerId = socket.data.playerId;
+        const actualRoomId = socket.data.roomId;
+
+        if (!actualPlayerId || !actualRoomId || actualRoomId !== roomId) {
+          socket.emit('error', { message: ERROR_MESSAGES.ROOM_NOT_FOUND });
+          return;
+        }
+
         const room = roomManager.getRoom(roomId);
         if (!room) {
           socket.emit('error', { message: ERROR_MESSAGES.ROOM_NOT_FOUND });
           return;
         }
 
+        // Warn on mismatch (can happen if client cached a wrong id)
+        if (playerId && playerId !== actualPlayerId) {
+          console.warn(
+            `[Socket] submitFunction playerId mismatch: payload=${playerId} socket=${actualPlayerId}`
+          );
+        }
+
         // Verify it's the player's turn
-        if (room.state.turn.currentPlayerId !== playerId) {
+        if (room.state.turn.currentPlayerId !== actualPlayerId) {
           socket.emit('error', { message: ERROR_MESSAGES.NOT_YOUR_TURN });
           return;
+        }
+
+        // Persist soldier selection/angle for consistent simulation across clients
+        if (typeof soldierIndex === 'number') {
+          room.state.turn.currentSoldierIndex = soldierIndex;
+        }
+        if (typeof soldierIndex === 'number' && typeof firingAngle === 'number') {
+          const shooter = room.state.players.find((p) => p.id === actualPlayerId);
+          if (shooter?.soldiers?.[soldierIndex]) {
+            shooter.soldiers[soldierIndex].angle = firingAngle;
+          }
         }
 
         // Update phase
@@ -127,11 +188,13 @@ export function setupSocketHandlers(io: GameServer): void {
         // The actual path calculation happens on the client for responsiveness
         io.to(roomId).emit('projectileFired', {
           path: [], // Path will be calculated client-side
-          playerId,
+          playerId: actualPlayerId,
           functionString,
+          soldierIndex: room.state.turn.currentSoldierIndex,
+          firingAngle,
         });
 
-        console.log(`[Socket] Player ${playerId} fired: ${functionString}`);
+        console.log(`[Socket] Player ${actualPlayerId} fired: ${functionString}`);
       } catch (error) {
         console.error('[Socket] Error submitting function:', error);
         socket.emit('error', { message: ERROR_MESSAGES.INVALID_FUNCTION });
@@ -141,28 +204,34 @@ export function setupSocketHandlers(io: GameServer): void {
     /**
      * Projectile hit a target
      */
-    socket.on('projectileHit', ({ roomId, targetType, targetId }) => {
+    socket.on('projectileHit', (payload) => {
       try {
+        const roomId = (payload as any).roomId as string;
         const room = roomManager.getRoom(roomId);
         if (!room) return;
 
-        if (targetType === 'player') {
-          // Process player damage
-          const damage = GAME_CONSTANTS.HIT_DAMAGE;
-          const newState = roomManager.processPlayerHit(roomId, targetId, damage);
-          
-          if (newState) {
-            const hitPlayer = newState.players.find(p => p.id === targetId);
-            
-            io.to(roomId).emit('playerHit', {
-              playerId: targetId,
-              damage,
-              newHealth: hitPlayer?.health ?? 0,
-            });
+        // Ignore once game over
+        if (room.state.turn.phase === 'gameover') return;
 
-            // Check for game over
+        // Only accept hit reports from the player whose turn it is
+        const actualPlayerId = socket.data.playerId;
+        if (!actualPlayerId || room.state.turn.currentPlayerId !== actualPlayerId) {
+          return;
+        }
+
+        const targetType = (payload as any).targetType as 'soldier' | 'obstacle' | 'terrain';
+
+        if (targetType === 'soldier') {
+          const targetPlayerId = (payload as any).targetPlayerId as string | undefined;
+          const targetSoldierIndex = (payload as any).targetSoldierIndex as number | undefined;
+          if (!targetPlayerId || typeof targetSoldierIndex !== 'number') return;
+
+          const newState = roomManager.processSoldierHit(roomId, targetPlayerId, targetSoldierIndex);
+          if (newState) {
+            io.to(roomId).emit('soldierHit', { playerId: targetPlayerId, soldierIndex: targetSoldierIndex });
+
             if (newState.turn.phase === 'gameover') {
-              const winner = newState.players.find(p => p.id === newState.winner);
+              const winner = newState.players.find((p) => p.id === newState.winner);
               io.to(roomId).emit('gameOver', {
                 winnerId: newState.winner,
                 winnerName: winner?.name ?? 'Hòa',
@@ -171,15 +240,33 @@ export function setupSocketHandlers(io: GameServer): void {
               return;
             }
 
-            // Next turn
             const nextState = roomManager.nextTurn(roomId);
             if (nextState) {
               io.to(roomId).emit('turnEnded', { turn: nextState.turn });
             }
           }
+        } else if (targetType === 'terrain') {
+          const x = (payload as any).x as number | undefined;
+          const y = (payload as any).y as number | undefined;
+          const radius = (payload as any).radius as number | undefined;
+          if (typeof x !== 'number' || typeof y !== 'number') return;
+
+          if (!room.state.terrain) {
+            room.state.terrain = { circles: [], explosions: [] };
+          }
+          const finalRadius = typeof radius === 'number' ? radius : GAME_CONSTANTS.EXPLOSION_RADIUS;
+          room.state.terrain.explosions.push({ x, y, radius: finalRadius });
+          io.to(roomId).emit('terrainHit', { x, y, radius: finalRadius });
+
+          const nextState = roomManager.nextTurn(roomId);
+          if (nextState) {
+            io.to(roomId).emit('turnEnded', { turn: nextState.turn });
+          }
         } else if (targetType === 'obstacle') {
           // Damage obstacle
-          const obstacle = room.state.obstacles.find(o => o.id === targetId);
+          const obstacleId = (payload as any).obstacleId as string | undefined;
+          if (!obstacleId) return;
+          const obstacle = room.state.obstacles.find(o => o.id === obstacleId);
           if (obstacle) {
             obstacle.health = Math.max(0, obstacle.health - GAME_CONSTANTS.OBSTACLE_HIT_DAMAGE);
             const shrinkFactor = 0.8;
@@ -188,7 +275,7 @@ export function setupSocketHandlers(io: GameServer): void {
 
             if (obstacle.health === 0) {
               obstacle.isDestroyed = true;
-              io.to(roomId).emit('obstacleDestroyed', { obstacleId: targetId });
+              io.to(roomId).emit('obstacleDestroyed', { obstacleId });
             } else {
               io.to(roomId).emit('obstacleDamaged', { obstacle });
             }
@@ -223,6 +310,31 @@ export function setupSocketHandlers(io: GameServer): void {
     });
 
     /**
+     * Handle chat message
+     */
+    socket.on('sendChatMessage', ({ roomId, message }) => {
+      try {
+        const { playerId } = socket.data;
+        if (!playerId) return;
+
+        const room = roomManager.getRoom(roomId);
+        if (!room) return;
+
+        const player = room.state.players.find(p => p.id === playerId);
+        if (!player) return;
+
+        io.to(roomId).emit('chatMessage', {
+          playerId,
+          playerName: player.name,
+          message: message.substring(0, 200), // Limit message length
+          timestamp: Date.now(),
+        });
+      } catch (error) {
+        console.error('[Socket] Error sending chat message:', error);
+      }
+    });
+
+    /**
      * Handle disconnection
      */
     socket.on('disconnect', () => {
@@ -240,6 +352,15 @@ export function setupSocketHandlers(io: GameServer): void {
           playerId,
           playerName,
         });
+
+        // If room is empty or game over, clear timer
+        const updatedRoom = roomManager.getRoom(roomId);
+        if (!updatedRoom || updatedRoom.state.players.length < 2) {
+          if (roomTimers.has(roomId)) {
+            clearInterval(roomTimers.get(roomId)!);
+            roomTimers.delete(roomId);
+          }
+        }
 
         console.log(`[Socket] ${playerName} disconnected from room ${roomId}`);
       }

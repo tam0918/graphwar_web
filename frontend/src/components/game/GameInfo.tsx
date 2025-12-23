@@ -15,6 +15,7 @@ interface GameInfoProps {
   myPlayerId: string | null;
   turnNumber: number;
   roomId?: string;
+  timeLeft?: number;
 }
 
 export function GameInfo({
@@ -23,6 +24,7 @@ export function GameInfo({
   myPlayerId,
   turnNumber,
   roomId,
+  timeLeft,
 }: GameInfoProps) {
   const getTeamName = (team: 'red' | 'blue') => {
     return team === 'red' ? UI_TEXT.TEAM_RED : UI_TEXT.TEAM_BLUE;
@@ -39,10 +41,18 @@ export function GameInfo({
       )}
 
       {/* Turn Counter */}
-      <div className="mb-4 text-center">
+      <div className="mb-4 text-center flex flex-col items-center">
         <span className="text-2xl font-bold text-white">
           {UI_TEXT.LABEL_TURN} #{turnNumber}
         </span>
+        {timeLeft !== undefined && (
+          <div className={`
+            mt-1 px-3 py-1 rounded-full text-sm font-mono font-bold
+            ${timeLeft <= 5 ? 'bg-red-500 text-white animate-pulse' : 'bg-gray-800 text-yellow-400'}
+          `}>
+            ⏱️ {timeLeft}s
+          </div>
+        )}
       </div>
 
       {/* Players List */}

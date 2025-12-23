@@ -2,17 +2,22 @@
 
 /**
  * GameCanvas Component
- * Renders the game grid, players, obstacles, and projectile animation
+ * Renders the game grid, soldiers, terrain obstacles, and projectile animation
  * Uses HTML5 Canvas API for high-performance rendering
+ * Updated to match original Graphwar visuals with circular terrain obstacles
  */
 
 import React, { useRef, useEffect, useCallback } from 'react';
 import {
   Point,
   Player,
+  Soldier,
   Obstacle,
   Projectile,
+  Explosion,
   GridConfig,
+  Terrain,
+  CircleObstacle,
   DEFAULT_GRID_CONFIG,
   GAME_CONSTANTS,
 } from '@/types';
@@ -22,50 +27,96 @@ interface GameCanvasProps {
   gridConfig?: GridConfig;
   players: Player[];
   obstacles: Obstacle[];
+  terrain: Terrain | null;
   projectile: Projectile | null;
   trajectoryPath?: Point[];
+  currentSoldierIndex?: number;
   onAnimationComplete?: (result: {
-    type: 'player' | 'obstacle' | 'boundary' | 'miss';
-    targetId?: string;
+    type: 'soldier' | 'obstacle' | 'terrain' | 'boundary' | 'miss';
+    targetPlayerId?: string;
+    targetSoldierIndex?: number;
+    targetObstacleId?: string;
+    impactPoint?: Point;
   }) => void;
   className?: string;
 }
 
-// Color palette (higher contrast, modern neon feel)
+// Color palette (matching original Graphwar style with modern updates)
 const COLORS = {
-  backgroundTop: '#0b1221',
-  backgroundBottom: '#0e1a30',
-  vignette: 'rgba(0,0,0,0.35)',
-  gridLine: 'rgba(255,255,255,0.05)',
-  gridLineMajor: 'rgba(255,255,255,0.12)',
+  // Background
+  backgroundTop: '#1a1a2e',
+  backgroundBottom: '#16213e',
+  vignette: 'rgba(0,0,0,0.25)',
+  
+  // Grid
+  gridLine: 'rgba(255,255,255,0.04)',
+  gridLineMajor: 'rgba(255,255,255,0.10)',
   axisLine: '#5eead4',
-  playerRed: '#f43f5e',
-  playerRedGlow: 'rgba(244, 63, 94, 0.35)',
-  playerBlue: '#22d3ee',
-  playerBlueGlow: 'rgba(34, 211, 238, 0.35)',
+  
+  // Teams (matching original Graphwar: red/pink for team 1, blue/cyan for team 2)
+  teamRed: '#ff6b6b',
+  teamRedGlow: 'rgba(255, 107, 107, 0.35)',
+  teamBlue: '#4ecdc4',
+  teamBlueGlow: 'rgba(78, 205, 196, 0.35)',
+  
+  // Soldiers
+  soldierOutline: '#ffffff',
+  soldierDead: '#666666',
+  
+  // Projectile
   projectile: '#fbbf24',
   projectileGlow: 'rgba(251, 191, 36, 0.55)',
-  trajectory: 'rgba(251, 191, 36, 0.7)',
-  trajectoryPreview: 'rgba(251, 191, 36, 0.28)',
+  trajectory: 'rgba(251, 191, 36, 0.8)',
+  trajectoryPreview: 'rgba(251, 191, 36, 0.25)',
+  
+  // Terrain obstacles (original uses brown/earth tones)
+  terrainFill: '#8b7355',
+  terrainStroke: '#a08060',
+  terrainGradient1: '#6b5344',
+  terrainGradient2: '#9a8365',
+  
+  // Legacy obstacles
   obstacle: '#8b9bb5',
   obstacleStroke: '#cbd5e1',
+  
+  // UI elements
   healthBarBg: '#0f172a',
   healthBarFill: '#34d399',
   text: '#e5e7eb',
+  explosion: '#ff9f43',
 };
 
 export function GameCanvas({
   gridConfig = DEFAULT_GRID_CONFIG,
   players,
   obstacles,
+  terrain,
   projectile,
   trajectoryPath,
+  currentSoldierIndex = 0,
   onAnimationComplete,
   className = '',
 }: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRef = useRef<number>(0);
   const projectileIndexRef = useRef<number>(0);
+  const [explosions, setExplosions] = React.useState<Explosion[]>([]);
+
+  /**
+   * Trigger an explosion effect
+   */
+  const triggerExplosion = useCallback((position: Point, color: string = COLORS.explosion) => {
+    const id = Math.random().toString(36).substring(7);
+    const newExplosion: Explosion = {
+      id,
+      position,
+      radius: 5,
+      maxRadius: 50,
+      opacity: 1,
+      color,
+    };
+    setExplosions(prev => [...prev, newExplosion]);
+  }, []);
 
   /**
    * Draw the coordinate grid
@@ -137,63 +188,228 @@ export function GameCanvas({
   }, [gridConfig]);
 
   /**
-   * Draw a player with glow effect
+   * Draw circular terrain obstacles (matching original Graphwar)
    */
-  const drawPlayer = useCallback((ctx: CanvasRenderingContext2D, player: Player) => {
-    if (!player.isAlive) return;
+  const drawTerrain = useCallback((ctx: CanvasRenderingContext2D) => {
+    if (!terrain) return;
+    
+    // Draw circular obstacles
+    terrain.circles.forEach((circle: CircleObstacle) => {
+      const canvasCenter = gridToCanvas({ x: circle.x, y: circle.y }, gridConfig);
+      
+      // Convert radius from grid units to canvas pixels
+      const { xMin, xMax, width } = gridConfig;
+      const canvasRadius = (circle.radius / (xMax - xMin)) * width;
+      
+      // Create gradient for 3D effect (like original Graphwar)
+      const gradient = ctx.createRadialGradient(
+        canvasCenter.x - canvasRadius * 0.3,
+        canvasCenter.y - canvasRadius * 0.3,
+        0,
+        canvasCenter.x,
+        canvasCenter.y,
+        canvasRadius
+      );
+      gradient.addColorStop(0, COLORS.terrainGradient2);
+      gradient.addColorStop(0.7, COLORS.terrainFill);
+      gradient.addColorStop(1, COLORS.terrainGradient1);
+      
+      ctx.beginPath();
+      ctx.arc(canvasCenter.x, canvasCenter.y, canvasRadius, 0, Math.PI * 2);
+      ctx.fillStyle = gradient;
+      ctx.fill();
+      ctx.strokeStyle = COLORS.terrainStroke;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    });
 
-    const canvasPos = gridToCanvas(player.position, gridConfig);
-    const radius = GAME_CONSTANTS.PLAYER_RADIUS;
-    const color = player.team === 'red' ? COLORS.playerRed : COLORS.playerBlue;
-    const glowColor = player.team === 'red' ? COLORS.playerRedGlow : COLORS.playerBlueGlow;
+    // Carve holes for explosions (destructible terrain feel)
+    if (terrain.explosions.length > 0) {
+      const previousComposite = ctx.globalCompositeOperation;
+      ctx.globalCompositeOperation = 'destination-out';
+      terrain.explosions.forEach((explosion) => {
+        const canvasCenter = gridToCanvas({ x: explosion.x, y: explosion.y }, gridConfig);
+        const { xMin, xMax, width } = gridConfig;
+        const canvasRadius = (explosion.radius / (xMax - xMin)) * width;
+        ctx.beginPath();
+        ctx.arc(canvasCenter.x, canvasCenter.y, canvasRadius, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(0,0,0,1)';
+        ctx.fill();
+      });
+      ctx.globalCompositeOperation = previousComposite;
 
-    // Glow effect
+      // Optional crater rim shading (subtle)
+      terrain.explosions.forEach((explosion) => {
+        const canvasCenter = gridToCanvas({ x: explosion.x, y: explosion.y }, gridConfig);
+        const { xMin, xMax, width } = gridConfig;
+        const canvasRadius = (explosion.radius / (xMax - xMin)) * width;
+        const gradient = ctx.createRadialGradient(
+          canvasCenter.x,
+          canvasCenter.y,
+          canvasRadius * 0.6,
+          canvasCenter.x,
+          canvasCenter.y,
+          canvasRadius * 1.15
+        );
+        gradient.addColorStop(0, 'rgba(0,0,0,0)');
+        gradient.addColorStop(1, 'rgba(0,0,0,0.35)');
+        ctx.beginPath();
+        ctx.arc(canvasCenter.x, canvasCenter.y, canvasRadius * 1.15, 0, Math.PI * 2);
+        ctx.fillStyle = gradient;
+        ctx.fill();
+      });
+    }
+  }, [terrain, gridConfig]);
+
+  /**
+   * Draw a soldier (small circle representing a unit)
+   */
+  const drawSoldier = useCallback((
+    ctx: CanvasRenderingContext2D, 
+    soldier: Soldier, 
+    team: 'red' | 'blue',
+    isCurrentSoldier: boolean,
+    playerColor?: string
+  ) => {
+    const canvasPos = gridToCanvas(soldier.position, gridConfig);
+    
+    // Convert soldier radius from grid units to canvas pixels
+    const { xMin, xMax, width } = gridConfig;
+    const canvasRadius = (GAME_CONSTANTS.SOLDIER_RADIUS / (xMax - xMin)) * width;
+    
+    // Determine colors
+    const teamColor = playerColor || (team === 'red' ? COLORS.teamRed : COLORS.teamBlue);
+    const glowColor = team === 'red' ? COLORS.teamRedGlow : COLORS.teamBlueGlow;
+    
+    if (!soldier.isAlive) {
+      // Dead soldier - draw as gray X
+      ctx.strokeStyle = COLORS.soldierDead;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(canvasPos.x - canvasRadius, canvasPos.y - canvasRadius);
+      ctx.lineTo(canvasPos.x + canvasRadius, canvasPos.y + canvasRadius);
+      ctx.moveTo(canvasPos.x + canvasRadius, canvasPos.y - canvasRadius);
+      ctx.lineTo(canvasPos.x - canvasRadius, canvasPos.y + canvasRadius);
+      ctx.stroke();
+      return;
+    }
+    
+    // Draw glow effect for current soldier
+    if (isCurrentSoldier) {
+      ctx.beginPath();
+      const gradient = ctx.createRadialGradient(
+        canvasPos.x, canvasPos.y, canvasRadius * 0.5,
+        canvasPos.x, canvasPos.y, canvasRadius * 3
+      );
+      gradient.addColorStop(0, glowColor);
+      gradient.addColorStop(1, 'transparent');
+      ctx.fillStyle = gradient;
+      ctx.arc(canvasPos.x, canvasPos.y, canvasRadius * 3, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Draw selection ring
+      ctx.beginPath();
+      ctx.arc(canvasPos.x, canvasPos.y, canvasRadius * 1.5, 0, Math.PI * 2);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    
+    // Draw soldier body
     ctx.beginPath();
-    const gradient = ctx.createRadialGradient(
-      canvasPos.x, canvasPos.y, radius * 0.5,
-      canvasPos.x, canvasPos.y, radius * 2
-    );
-    gradient.addColorStop(0, glowColor);
-    gradient.addColorStop(1, 'transparent');
-    ctx.fillStyle = gradient;
-    ctx.arc(canvasPos.x, canvasPos.y, radius * 2, 0, Math.PI * 2);
+    ctx.arc(canvasPos.x, canvasPos.y, canvasRadius, 0, Math.PI * 2);
+    ctx.fillStyle = teamColor;
     ctx.fill();
-
-    // Player circle
-    ctx.beginPath();
-    ctx.arc(canvasPos.x, canvasPos.y, radius, 0, Math.PI * 2);
-    ctx.fillStyle = color;
-    ctx.fill();
-    ctx.strokeStyle = 'white';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = COLORS.soldierOutline;
+    ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    // Health bar
-    const healthBarWidth = 40;
-    const healthBarHeight = 6;
-    const healthPercent = player.health / player.maxHealth;
-    const healthBarX = canvasPos.x - healthBarWidth / 2;
-    const healthBarY = canvasPos.y - radius - 15;
+    // Draw aiming barrel for the current soldier (helps readability)
+    if (isCurrentSoldier) {
+      const barrelLen = canvasRadius * 2.2;
+      const endX = canvasPos.x + Math.cos(soldier.angle) * barrelLen;
+      const endY = canvasPos.y - Math.sin(soldier.angle) * barrelLen;
 
-    // Background
-    ctx.fillStyle = COLORS.healthBarBg;
-    ctx.fillRect(healthBarX, healthBarY, healthBarWidth, healthBarHeight);
+      ctx.beginPath();
+      ctx.moveTo(canvasPos.x, canvasPos.y);
+      ctx.lineTo(endX, endY);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      ctx.stroke();
 
-    // Fill
-    ctx.fillStyle = healthPercent > 0.3 ? COLORS.healthBarFill : COLORS.playerRed;
-    ctx.fillRect(healthBarX, healthBarY, healthBarWidth * healthPercent, healthBarHeight);
-
-    // Border
-    ctx.strokeStyle = COLORS.text;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(healthBarX, healthBarY, healthBarWidth, healthBarHeight);
-
-    // Player name
-    ctx.fillStyle = COLORS.text;
-    ctx.font = 'bold 12px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(player.name, canvasPos.x, canvasPos.y + radius + 20);
+      ctx.beginPath();
+      ctx.arc(endX, endY, 3, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+    }
   }, [gridConfig]);
+
+  /**
+   * Draw a player (now draws all their soldiers)
+   */
+  const drawPlayer = useCallback((
+    ctx: CanvasRenderingContext2D, 
+    player: Player,
+    isCurrentPlayer: boolean,
+    currentSoldierIdx: number
+  ) => {
+    if (!player.soldiers || player.soldiers.length === 0) {
+      // Fallback: draw player at their position (legacy support)
+      if (!player.isAlive) return;
+
+      const canvasPos = gridToCanvas(player.position, gridConfig);
+      const radius = GAME_CONSTANTS.PLAYER_RADIUS;
+      const color = player.team === 'red' ? COLORS.teamRed : COLORS.teamBlue;
+      const glowColor = player.team === 'red' ? COLORS.teamRedGlow : COLORS.teamBlueGlow;
+
+      // Glow effect
+      ctx.beginPath();
+      const gradient = ctx.createRadialGradient(
+        canvasPos.x, canvasPos.y, radius * 0.5,
+        canvasPos.x, canvasPos.y, radius * 2
+      );
+      gradient.addColorStop(0, glowColor);
+      gradient.addColorStop(1, 'transparent');
+      ctx.fillStyle = gradient;
+      ctx.arc(canvasPos.x, canvasPos.y, radius * 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Player circle
+      ctx.beginPath();
+      ctx.arc(canvasPos.x, canvasPos.y, radius, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.strokeStyle = 'white';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Player name
+      ctx.fillStyle = COLORS.text;
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(player.name, canvasPos.x, canvasPos.y + radius + 20);
+      return;
+    }
+
+    // Draw all soldiers for this player
+    player.soldiers.forEach((soldier, soldierIndex) => {
+      const isCurrentSoldier = isCurrentPlayer && soldierIndex === currentSoldierIdx;
+      drawSoldier(ctx, soldier, player.team, isCurrentSoldier, player.color);
+    });
+
+    // Draw player name near their first alive soldier
+    const aliveSoldier = player.soldiers.find(s => s.isAlive);
+    if (aliveSoldier) {
+      const canvasPos = gridToCanvas(aliveSoldier.position, gridConfig);
+      ctx.fillStyle = COLORS.text;
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(player.name, canvasPos.x, canvasPos.y + 25);
+    }
+  }, [gridConfig, drawSoldier]);
 
   /**
    * Draw obstacles
@@ -306,21 +522,47 @@ export function GameCanvas({
   }, [gridConfig]);
 
   /**
-   * Check collision between projectile and entities
+   * Draw explosions
+   */
+  const drawExplosions = useCallback((ctx: CanvasRenderingContext2D) => {
+    explosions.forEach(exp => {
+      const canvasPos = gridToCanvas(exp.position, gridConfig);
+      
+      ctx.beginPath();
+      const grad = ctx.createRadialGradient(
+        canvasPos.x, canvasPos.y, exp.radius * 0.2,
+        canvasPos.x, canvasPos.y, exp.radius
+      );
+      grad.addColorStop(0, exp.color);
+      grad.addColorStop(0.6, exp.color + '88');
+      grad.addColorStop(1, 'transparent');
+      
+      ctx.fillStyle = grad;
+      ctx.globalAlpha = exp.opacity;
+      ctx.arc(canvasPos.x, canvasPos.y, exp.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1.0;
+    });
+  }, [explosions, gridConfig]);
+
+  /**
+   * Check collision between projectile and entities (soldiers, terrain, obstacles)
    */
   const checkCollision = useCallback((
     projectilePos: Point,
     players: Player[],
     obstacles: Obstacle[],
     ownerId: string
-  ): { type: 'player' | 'obstacle' | 'boundary' | 'none'; target?: Player | Obstacle } => {
+  ): { 
+    type: 'soldier' | 'obstacle' | 'terrain' | 'boundary' | 'none'; 
+    targetPlayerId?: string;
+    targetSoldierIndex?: number;
+    target?: Player | Obstacle;
+  } => {
     const { xMin, xMax, yMin, yMax } = gridConfig;
-    const projectileRadius = GAME_CONSTANTS.PROJECTILE_RADIUS;
-    const playerRadius = GAME_CONSTANTS.PLAYER_RADIUS;
-
-    // Convert to grid units for collision (approximate)
-    const gridProjectileRadius = (projectileRadius / gridConfig.width) * (xMax - xMin);
-    const gridPlayerRadius = (playerRadius / gridConfig.width) * (xMax - xMin);
+    
+    // Use grid units directly for collision (SOLDIER_RADIUS is already in grid units)
+    const soldierRadius = GAME_CONSTANTS.SOLDIER_RADIUS;
 
     // Check boundary collision
     if (
@@ -332,22 +574,67 @@ export function GameCanvas({
       return { type: 'boundary' };
     }
 
-    // Check player collision
+    // Check soldier collision (each player has multiple soldiers)
     for (const player of players) {
       // Skip dead players and the player who fired the projectile (owner)
       if (!player.isAlive || player.id === ownerId) continue;
       
-      const distance = Math.sqrt(
-        Math.pow(projectilePos.x - player.position.x, 2) +
-        Math.pow(projectilePos.y - player.position.y, 2)
-      );
+      // Check each soldier
+      if (player.soldiers && player.soldiers.length > 0) {
+        for (let soldierIndex = 0; soldierIndex < player.soldiers.length; soldierIndex++) {
+          const soldier = player.soldiers[soldierIndex];
+          if (!soldier.isAlive) continue;
+          
+          const distance = Math.sqrt(
+            Math.pow(projectilePos.x - soldier.position.x, 2) +
+            Math.pow(projectilePos.y - soldier.position.y, 2)
+          );
 
-      if (distance < gridProjectileRadius + gridPlayerRadius) {
-        return { type: 'player', target: player };
+          if (distance < soldierRadius) {
+            return { 
+              type: 'soldier', 
+              targetPlayerId: player.id,
+              targetSoldierIndex: soldierIndex,
+              target: player 
+            };
+          }
+        }
+      } else {
+        // Legacy: check player position directly
+        const distance = Math.sqrt(
+          Math.pow(projectilePos.x - player.position.x, 2) +
+          Math.pow(projectilePos.y - player.position.y, 2)
+        );
+
+        if (distance < soldierRadius) {
+          return { type: 'soldier', targetPlayerId: player.id, target: player };
+        }
+      }
+    }
+    
+    // Check terrain collision (circular obstacles)
+    if (terrain && terrain.circles) {
+      // If we are inside an existing crater, treat as empty space.
+      if (terrain.explosions?.some((e) => {
+        const d = Math.hypot(projectilePos.x - e.x, projectilePos.y - e.y);
+        return d < e.radius;
+      })) {
+        // Skip terrain collision
+      } else {
+      for (const circle of terrain.circles) {
+        const distance = Math.sqrt(
+          Math.pow(projectilePos.x - circle.x, 2) +
+          Math.pow(projectilePos.y - circle.y, 2)
+        );
+        
+        if (distance < circle.radius) {
+          return { type: 'terrain' };
+        }
+      }
       }
     }
 
-    // Check obstacle collision
+    // Check legacy obstacle collision (rectangular)
     for (const obstacle of obstacles) {
       if (obstacle.isDestroyed) continue;
 
@@ -365,7 +652,7 @@ export function GameCanvas({
     }
 
     return { type: 'none' };
-  }, [gridConfig]);
+  }, [gridConfig, terrain]);
 
   /**
    * Main render function
@@ -382,8 +669,11 @@ export function GameCanvas({
 
     // Draw grid
     drawGrid(ctx);
+    
+    // Draw terrain obstacles (circular)
+    drawTerrain(ctx);
 
-    // Draw obstacles
+    // Draw legacy obstacles (rectangular)
     drawObstacles(ctx);
 
     // Draw trajectory preview
@@ -391,8 +681,17 @@ export function GameCanvas({
       drawTrajectory(ctx, trajectoryPath, true);
     }
 
-    // Draw players
-    players.forEach(player => drawPlayer(ctx, player));
+    // Find current player for highlighting
+    const currentPlayerId = projectile?.owner;
+    
+    // Draw players (each with their soldiers)
+    players.forEach(player => {
+      const isCurrentPlayer = player.id === currentPlayerId;
+      drawPlayer(ctx, player, isCurrentPlayer, currentSoldierIndex);
+    });
+
+    // Draw explosions
+    drawExplosions(ctx);
 
     // Draw projectile if active
     if (projectile?.isActive && projectile.path.length > 0) {
@@ -408,21 +707,41 @@ export function GameCanvas({
     }
   }, [
     drawGrid,
+    drawTerrain,
     drawObstacles,
     drawPlayer,
     drawProjectile,
     drawTrajectory,
+    drawExplosions,
     players,
     projectile,
     trajectoryPath,
+    currentSoldierIndex,
   ]);
 
   /**
-   * Animation loop for projectile
+   * Animation loop for projectile and effects
    */
   const animate = useCallback(() => {
+    // Update explosions
+    if (explosions.length > 0) {
+      setExplosions(prev => prev
+        .map(exp => ({
+          ...exp,
+          radius: exp.radius + (exp.maxRadius - exp.radius) * 0.1,
+          opacity: exp.opacity - 0.03,
+        }))
+        .filter(exp => exp.opacity > 0)
+      );
+    }
+
     if (!projectile?.isActive) {
-      render();
+      if (explosions.length > 0) {
+        render();
+        animationFrameRef.current = requestAnimationFrame(animate);
+      } else {
+        render();
+      }
       return;
     }
 
@@ -442,12 +761,43 @@ export function GameCanvas({
     const collision = checkCollision(currentPos, players, obstacles, projectile.owner);
 
     if (collision.type !== 'none') {
-      const payload =
-        collision.type === 'player'
-          ? { type: 'player' as const, targetId: (collision.target as Player)?.id }
-          : collision.type === 'obstacle'
-            ? { type: 'obstacle' as const, targetId: (collision.target as Obstacle)?.id }
-            : { type: 'boundary' as const };
+      // Build appropriate payload based on collision type
+      let payload: {
+        type: 'soldier' | 'obstacle' | 'terrain' | 'boundary' | 'miss';
+        targetPlayerId?: string;
+        targetSoldierIndex?: number;
+        targetObstacleId?: string;
+        impactPoint?: Point;
+      };
+      
+      switch (collision.type) {
+        case 'soldier':
+          payload = { 
+            type: 'soldier', 
+            targetPlayerId: collision.targetPlayerId,
+            targetSoldierIndex: collision.targetSoldierIndex,
+          };
+          break;
+        case 'obstacle':
+          payload = { type: 'obstacle', targetObstacleId: (collision.target as Obstacle | undefined)?.id };
+          break;
+        case 'terrain':
+          payload = { type: 'terrain', impactPoint: currentPos };
+          break;
+        case 'boundary':
+          payload = { type: 'boundary' };
+          break;
+        default:
+          payload = { type: 'miss' };
+      }
+
+      // Trigger explosion effect with appropriate color
+      const explosionColor = collision.type === 'soldier' 
+        ? COLORS.teamRed 
+        : collision.type === 'terrain'
+          ? COLORS.terrainFill
+          : COLORS.explosion;
+      triggerExplosion(currentPos, explosionColor);
 
       // Collision detected - stop animation and report
       onAnimationComplete?.(payload);
@@ -464,12 +814,14 @@ export function GameCanvas({
 
     // Continue animation
     animationFrameRef.current = requestAnimationFrame(animate);
-  }, [projectile, players, obstacles, render, checkCollision, onAnimationComplete]);
+  }, [projectile, players, obstacles, render, checkCollision, onAnimationComplete, explosions, triggerExplosion]);
 
-  // Start/stop animation when projectile changes
+  // Start/stop animation when projectile or explosions change
   useEffect(() => {
-    if (projectile?.isActive) {
-      projectileIndexRef.current = 0;
+    if (projectile?.isActive || explosions.length > 0) {
+      if (projectile?.isActive) {
+        projectileIndexRef.current = 0;
+      }
       animationFrameRef.current = requestAnimationFrame(animate);
     } else {
       cancelAnimationFrame(animationFrameRef.current);
@@ -479,7 +831,7 @@ export function GameCanvas({
     return () => {
       cancelAnimationFrame(animationFrameRef.current);
     };
-  }, [projectile, animate, render]);
+  }, [projectile?.isActive, explosions.length > 0, animate, render]);
 
   // Initial render
   useEffect(() => {

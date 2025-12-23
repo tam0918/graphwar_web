@@ -1,6 +1,7 @@
 /**
  * Game State Store (Zustand)
  * Manages all game state including players, projectiles, and turn logic
+ * Updated to match original Graphwar with multiple soldiers per player
  */
 
 import { create } from 'zustand';
@@ -8,16 +9,26 @@ import { devtools } from 'zustand/middleware';
 import {
   GameState,
   Player,
+  Soldier,
   Obstacle,
   Projectile,
   TurnState,
   GamePhase,
+  GameMode,
   Point,
   GridConfig,
+  Terrain,
   DEFAULT_GRID_CONFIG,
   GAME_CONSTANTS,
 } from '@/types';
-import { parseMathFunction, generateTrajectory } from '@/lib/math';
+import { generateTrajectory, generateTerrain } from '@/lib/math';
+
+// Player colors (matching original Graphwar colors)
+const PLAYER_COLORS = [
+  '#FF6B6B', '#4ECDC4', '#FFE66D', '#95E1D3',
+  '#F38181', '#AA96DA', '#FCBAD3', '#A8D8EA',
+  '#FF9F43', '#6C5CE7',
+];
 
 interface GameStore extends GameState {
   // Connection state
@@ -28,6 +39,7 @@ interface GameStore extends GameState {
   setMyPlayerId: (id: string) => void;
   setConnected: (connected: boolean) => void;
   setRoomId: (roomId: string) => void;
+  setGameMode: (mode: GameMode) => void;
 
   // Player actions
   addPlayer: (player: Player) => void;
@@ -35,6 +47,12 @@ interface GameStore extends GameState {
   updatePlayer: (playerId: string, updates: Partial<Player>) => void;
   damagePlayer: (playerId: string, damage: number) => void;
   damageObstacle: (obstacleId: string, damage: number) => void;
+  
+  // Soldier actions
+  addSoldier: (playerId: string) => void;
+  removeSoldier: (playerId: string) => void;
+  killSoldier: (playerId: string, soldierIndex: number) => void;
+  setSoldierAngle: (playerId: string, soldierIndex: number, angle: number) => void;
 
   // Turn actions
   setPhase: (phase: GamePhase) => void;
@@ -43,11 +61,15 @@ interface GameStore extends GameState {
 
   // Projectile actions
   fireProjectile: (functionString: string) => boolean;
+  fireProjectileForPlayer: (playerId: string, functionString: string) => boolean;
   clearProjectile: () => void;
 
   // Obstacle actions
   addObstacle: (obstacle: Obstacle) => void;
   destroyObstacle: (obstacleId: string) => void;
+  
+  // Terrain actions
+  addTerrainExplosion: (x: number, y: number, radius: number) => void;
 
   // Game flow
   startGame: () => void;
@@ -59,6 +81,7 @@ interface GameStore extends GameState {
 
   // Utility
   getCurrentPlayer: () => Player | undefined;
+  getCurrentSoldier: () => Soldier | undefined;
   isMyTurn: () => boolean;
 }
 
@@ -74,19 +97,39 @@ function upsertPlayers(existing: Player[], incoming: Player[]): Player[] {
   return Array.from(map.values());
 }
 
-// Generate random position within grid bounds
-function randomPosition(gridConfig: GridConfig, team: 'red' | 'blue'): Point {
+// Generate unique soldier ID
+function generateSoldierId(): string {
+  return `soldier-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+}
+
+// Generate random position within grid bounds for a soldier
+function randomSoldierPosition(gridConfig: GridConfig, team: 'red' | 'blue'): Point {
   const { xMin, xMax, yMin, yMax } = gridConfig;
   
-  // Red team on left side, blue team on right side
+  // Red team on left half (x < 0), Blue team on right half (x > 0)
+  // This matches original Graphwar where TEAM1 is left, TEAM2 is right
   const xRange = team === 'red'
-    ? { min: xMin + 2, max: xMin + (xMax - xMin) * 0.3 }
-    : { min: xMax - (xMax - xMin) * 0.3, max: xMax - 2 };
+    ? { min: xMin + 1, max: -1 } // Left half
+    : { min: 1, max: xMax - 1 }; // Right half
 
   return {
     x: xRange.min + Math.random() * (xRange.max - xRange.min),
     y: yMin + 2 + Math.random() * (yMax - yMin - 4),
   };
+}
+
+// Create initial soldiers for a player
+function createInitialSoldiers(gridConfig: GridConfig, team: 'red' | 'blue', count: number = GAME_CONSTANTS.INITIAL_SOLDIERS): Soldier[] {
+  const soldiers: Soldier[] = [];
+  for (let i = 0; i < count; i++) {
+    soldiers.push({
+      id: generateSoldierId(),
+      position: randomSoldierPosition(gridConfig, team),
+      isAlive: true,
+      angle: 0,
+    });
+  }
+  return soldiers;
 }
 
 // Generate random obstacles
@@ -118,23 +161,27 @@ function generateObstacles(gridConfig: GridConfig, count: number = 4): Obstacle[
 
 // Initial state
 const initialState: Omit<GameStore, 
-  | 'setMyPlayerId' | 'setConnected' | 'setRoomId'
+  | 'setMyPlayerId' | 'setConnected' | 'setRoomId' | 'setGameMode'
   | 'addPlayer' | 'removePlayer' | 'updatePlayer' | 'damagePlayer' | 'damageObstacle'
+  | 'addSoldier' | 'removeSoldier' | 'killSoldier' | 'setSoldierAngle'
   | 'setPhase' | 'nextTurn' | 'setCurrentPlayer'
-  | 'fireProjectile' | 'clearProjectile'
-  | 'addObstacle' | 'destroyObstacle'
+  | 'fireProjectile' | 'fireProjectileForPlayer' | 'clearProjectile'
+  | 'addObstacle' | 'destroyObstacle' | 'addTerrainExplosion'
   | 'startGame' | 'endGame' | 'resetGame'
-  | 'syncGameState' | 'getCurrentPlayer' | 'isMyTurn'
+  | 'syncGameState' | 'getCurrentPlayer' | 'getCurrentSoldier' | 'isMyTurn'
 > = {
   roomId: '',
   players: [],
   obstacles: [],
+  terrain: null,
   projectile: null,
   turn: {
     currentPlayerId: '',
     turnNumber: 0,
     phase: 'waiting',
+    currentSoldierIndex: 0,
   },
+  gameMode: 'normal',
   gridConfig: DEFAULT_GRID_CONFIG,
   winner: null,
   winnerTeam: null,
@@ -151,6 +198,7 @@ export const useGameStore = create<GameStore>()(
       setMyPlayerId: (id) => set({ myPlayerId: id }),
       setConnected: (connected) => set({ isConnected: connected }),
       setRoomId: (roomId) => set({ roomId }),
+      setGameMode: (mode) => set({ gameMode: mode }),
 
       // Player actions
       addPlayer: (player) => set((state) => ({
@@ -167,15 +215,95 @@ export const useGameStore = create<GameStore>()(
         ),
       })),
 
+      // Soldier actions
+      addSoldier: (playerId) => set((state) => {
+        const player = state.players.find(p => p.id === playerId);
+        if (!player || player.soldiers.length >= GAME_CONSTANTS.MAX_SOLDIERS_PER_PLAYER) return state;
+        
+        const newSoldier: Soldier = {
+          id: generateSoldierId(),
+          position: randomSoldierPosition(state.gridConfig, player.team),
+          isAlive: true,
+          angle: 0,
+        };
+        
+        return {
+          players: state.players.map(p =>
+            p.id === playerId
+              ? { ...p, soldiers: [...p.soldiers, newSoldier] }
+              : p
+          ),
+        };
+      }),
+
+      removeSoldier: (playerId) => set((state) => {
+        const player = state.players.find(p => p.id === playerId);
+        if (!player || player.soldiers.length <= 1) return state;
+        
+        return {
+          players: state.players.map(p =>
+            p.id === playerId
+              ? { ...p, soldiers: p.soldiers.slice(0, -1) }
+              : p
+          ),
+        };
+      }),
+
+      killSoldier: (playerId, soldierIndex) => set((state) => {
+        const players = state.players.map((p) => {
+          if (p.id !== playerId) return p;
+          
+          const soldiers = p.soldiers.map((s, i) =>
+            i === soldierIndex ? { ...s, isAlive: false } : s
+          );
+          
+          // Check if player has any alive soldiers
+          const hasAliveSoldiers = soldiers.some(s => s.isAlive);
+          
+          return {
+            ...p,
+            soldiers,
+            isAlive: hasAliveSoldiers,
+          };
+        });
+
+        // Check for winner by remaining teams
+        const alivePlayers = players.filter((p) => p.isAlive);
+        const aliveTeams = new Set(alivePlayers.map((p) => p.team));
+        const winner = aliveTeams.size <= 1 ? (alivePlayers[0]?.id ?? null) : null;
+        const winnerTeam = aliveTeams.size <= 1 ? (alivePlayers[0]?.team ?? null) : null;
+
+        return {
+          players,
+          winner,
+          winnerTeam,
+          turn: winner ? { ...state.turn, phase: 'gameover' } : state.turn,
+        };
+      }),
+
+      setSoldierAngle: (playerId, soldierIndex, angle) => set((state) => ({
+        players: state.players.map((p) =>
+          p.id === playerId
+            ? {
+                ...p,
+                soldiers: p.soldiers.map((s, i) =>
+                  i === soldierIndex ? { ...s, angle } : s
+                ),
+              }
+            : p
+        ),
+      })),
+
       damagePlayer: (playerId, damage) => set((state) => {
         const players = state.players.map((p) => {
           if (p.id !== playerId) return p;
           
           const newHealth = Math.max(0, p.health - damage);
+          const isAlive = newHealth > 0 && p.soldiers.some(s => s.isAlive);
           return {
             ...p,
             health: newHealth,
-            isAlive: newHealth > 0,
+            isAlive,
           };
         });
 
@@ -227,12 +355,17 @@ export const useGameStore = create<GameStore>()(
           (p) => p.id === state.turn.currentPlayerId
         );
         const nextIndex = (currentIndex + 1) % alivePlayers.length;
+        
+        // Find next alive soldier for the next player
+        const nextPlayer = alivePlayers[nextIndex];
+        const nextSoldierIndex = nextPlayer.soldiers.findIndex(s => s.isAlive);
 
         return {
           turn: {
-            currentPlayerId: alivePlayers[nextIndex].id,
+            currentPlayerId: nextPlayer.id,
             turnNumber: state.turn.turnNumber + 1,
             phase: 'input',
+            currentSoldierIndex: nextSoldierIndex >= 0 ? nextSoldierIndex : 0,
           },
           projectile: null,
         };
@@ -243,23 +376,25 @@ export const useGameStore = create<GameStore>()(
       })),
 
       // Projectile actions
-      fireProjectile: (functionString) => {
+      fireProjectileForPlayer: (playerId, functionString) => {
         const state = get();
-        const currentPlayer = state.players.find(
-          (p) => p.id === state.turn.currentPlayerId
-        );
+        const shooter = state.players.find((p) => p.id === playerId);
+        if (!shooter) return false;
+        
+        // Get current soldier
+        const soldierIndex = state.turn.currentSoldierIndex || 0;
+        const soldier = shooter.soldiers[soldierIndex];
+        if (!soldier || !soldier.isAlive) return false;
 
-        if (!currentPlayer) return false;
-
-        // Determine firing direction based on team
-        const direction = currentPlayer.team === 'red' ? 'right' : 'left';
-
-        // Generate trajectory
+        const direction = shooter.team === 'red' ? 'right' : 'left';
         const result = generateTrajectory(
           functionString,
-          currentPlayer.position,
+          soldier.position, // Use soldier's position instead of player position
           direction,
-          state.gridConfig
+          state.gridConfig,
+          state.gameMode,
+          soldier.angle, // For 2nd order ODE
+          state.terrain || undefined
         );
 
         if (!result.success) return false;
@@ -270,7 +405,7 @@ export const useGameStore = create<GameStore>()(
             path: result.points,
             pathIndex: 0,
             isActive: true,
-            owner: currentPlayer.id,
+            owner: shooter.id,
           },
           turn: {
             ...state.turn,
@@ -280,6 +415,13 @@ export const useGameStore = create<GameStore>()(
         });
 
         return true;
+      },
+
+      fireProjectile: (functionString) => {
+        const state = get();
+        const currentPlayerId = state.turn.currentPlayerId;
+        if (!currentPlayerId) return false;
+        return get().fireProjectileForPlayer(currentPlayerId, functionString);
       },
 
       clearProjectile: () => set({
@@ -296,30 +438,52 @@ export const useGameStore = create<GameStore>()(
           o.id === obstacleId ? { ...o, isDestroyed: true } : o
         ),
       })),
+      
+      // Terrain actions
+      addTerrainExplosion: (x, y, radius) => set((state) => {
+        if (!state.terrain) return state;
+        
+        return {
+          terrain: {
+            ...state.terrain,
+            explosions: [...state.terrain.explosions, { x, y, radius }],
+          },
+        };
+      }),
 
       // Game flow
       startGame: () => {
         const state = get();
         
-        // Initialize player positions if not set
-        const initializedPlayers: Player[] = state.players.map((player, index) => ({
-          ...player,
-          position: player.position.x === 0 && player.position.y === 0
-            ? randomPosition(state.gridConfig, index === 0 ? 'red' : 'blue')
-            : player.position,
-          team: (index === 0 ? 'red' : 'blue') as Player['team'],
-          health: GAME_CONSTANTS.MAX_HEALTH,
-          maxHealth: GAME_CONSTANTS.MAX_HEALTH,
-          isAlive: true,
-        }));
+        // Generate terrain with circular obstacles
+        const terrain = generateTerrain(state.gridConfig);
+        
+        // Initialize players with soldiers
+        const initializedPlayers: Player[] = state.players.map((player, index) => {
+          const team = (index % 2 === 0 ? 'red' : 'blue') as Player['team'];
+          const soldiers = createInitialSoldiers(state.gridConfig, team);
+          
+          return {
+            ...player,
+            position: soldiers[0]?.position || { x: 0, y: 0 },
+            team,
+            health: GAME_CONSTANTS.MAX_HEALTH,
+            maxHealth: GAME_CONSTANTS.MAX_HEALTH,
+            isAlive: true,
+            soldiers,
+            color: PLAYER_COLORS[index % PLAYER_COLORS.length],
+          };
+        });
 
         set({
           players: initializedPlayers,
-          obstacles: generateObstacles(state.gridConfig),
+          obstacles: [], // Using terrain.circles instead
+          terrain,
           turn: {
             currentPlayerId: initializedPlayers[0]?.id || '',
             turnNumber: 1,
             phase: 'input',
+            currentSoldierIndex: 0,
           },
           winner: null,
           winnerTeam: null,
@@ -358,6 +522,13 @@ export const useGameStore = create<GameStore>()(
         const state = get();
         return state.players.find((p) => p.id === state.turn.currentPlayerId);
       },
+      
+      getCurrentSoldier: () => {
+        const state = get();
+        const player = state.players.find((p) => p.id === state.turn.currentPlayerId);
+        if (!player) return undefined;
+        return player.soldiers[state.turn.currentSoldierIndex || 0];
+      },
 
       isMyTurn: () => {
         const state = get();
@@ -373,6 +544,12 @@ export const useCurrentPlayer = () => useGameStore((state) =>
   state.players.find((p) => p.id === state.turn.currentPlayerId)
 );
 
+export const useCurrentSoldier = () => useGameStore((state) => {
+  const player = state.players.find((p) => p.id === state.turn.currentPlayerId);
+  if (!player) return undefined;
+  return player.soldiers[state.turn.currentSoldierIndex || 0];
+});
+
 export const useMyPlayer = () => useGameStore((state) => 
   state.players.find((p) => p.id === state.myPlayerId)
 );
@@ -384,3 +561,7 @@ export const useIsMyTurn = () => useGameStore((state) =>
 export const useGamePhase = () => useGameStore((state) => state.turn.phase);
 
 export const useTurnNumber = () => useGameStore((state) => state.turn.turnNumber);
+
+export const useGameMode = () => useGameStore((state) => state.gameMode);
+
+export const useTerrain = () => useGameStore((state) => state.terrain);

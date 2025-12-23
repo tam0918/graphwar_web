@@ -33,7 +33,7 @@ export default function LobbyPage() {
   // Navigate to game when room is ready
   useEffect(() => {
     if (roomId && players.length >= 2 && turn.phase === 'input') {
-      router.push('/game');
+      router.push('/');
     }
   }, [roomId, players.length, turn.phase, router]);
 
