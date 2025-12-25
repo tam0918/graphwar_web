@@ -1,0 +1,85 @@
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.gw-app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+}
+
+.gw-content {
+  flex: 1;
+  min-height: 0;
+}
+
+.gw-lobbyLayout {
+  height: 100%;
+  overflow: auto;
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(320px, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .gw-lobbyLayout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.gw-gameLayout {
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 980px) {
+  .gw-gameLayout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.gw-gameMain {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.gw-gameSide {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
+}
+
+.gw-canvasWrap {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid #ddd;
+  background: #fff;
+}
+
+.gw-chatLog {
+  overflow: auto;
+  border: 1px solid #ddd;
+  margin-top: 8px;
+  padding: 8px;
+  background: #fff;
+}

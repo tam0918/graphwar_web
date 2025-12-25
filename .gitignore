@@ -1,24 +1,48 @@
-# Node dependencies
+# --- Dependencies ---
 node_modules/
-**/node_modules/
 
-# Additional commonly ignored files
-# Logs
+# --- Builds / Bundles ---
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Vite
+.vite/
+
+# --- Cache ---
+.cache/
+.tmp/
+tmp/
+.eslintcache
+
+# --- Logs ---
+logs/
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
 
-# Build outputs
-dist/
-build/
-.next/
-
-# Caches
-.cache/
-cache/
-cache/webpack/client-development/
-frontend/.next/cache/webpack/server-development/
-.pack.gz
-
-# Env
+# --- Environment / Secrets ---
 .env
+.env.*
+!.env.example
+
+# --- Coverage ---
+coverage/
+.nyc_output/
+
+# --- Editor / OS ---
+.DS_Store
+Thumbs.db
+
+# VS Code (keep workspace settings if you want by removing this)
+.vscode/
+
+# --- Runtime data ---
+*.pid
+*.seed
+
+# --- Optional: local dev artifacts ---
+*.local
