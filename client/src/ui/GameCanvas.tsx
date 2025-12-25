@@ -2,29 +2,204 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { GAME_CONSTANTS, type RoomState, type ShotResult } from "@graphwar/shared";
 
 const COLORS = {
-  backgroundTop: "#1a1a2e",
-  backgroundBottom: "#16213e",
-  vignette: "rgba(0,0,0,0.25)",
+  // Museum Display (dark)
+  backgroundTop: "#0f1312",
+  backgroundBottom: "#090c0c",
+  vignette: "rgba(0,0,0,0.45)",
 
-  text: "#e5e7eb",
+  text: "rgba(242, 239, 229, 0.95)",
 
-  terrainFill: "#8b7355",
-  terrainStroke: "#a08060",
-  terrainGradient1: "#6b5344",
-  terrainGradient2: "#9a8365",
+  terrainFill: "#c5a05b", // muted gold
+  terrainStroke: "rgba(242, 239, 229, 0.55)",
+  terrainGradient1: "#b6904f",
+  terrainGradient2: "#d6b67a",
 
-  teamBlue: "#4ecdc4",
-  teamBlueGlow: "rgba(78, 205, 196, 0.35)",
-  teamRed: "#ff6b6b",
-  teamRedGlow: "rgba(255, 107, 107, 0.35)",
+  teamBlue: "#2bc3b4", // phosphor teal
+  teamBlueGlow: "rgba(43, 195, 180, 0.22)",
+  teamRed: "#c5a05b", // muted gold
+  teamRedGlow: "rgba(197, 160, 91, 0.20)",
 
-  selectionRing: "#ffffff",
-  selectionRingAlt: "#ffcc00",
+  selectionRing: "rgba(242, 239, 229, 0.90)",
+  selectionRingAlt: "#c5a05b",
 
-  trajectory: "rgba(251, 191, 36, 0.85)",
-  trajectoryGlow: "rgba(251, 191, 36, 0.25)",
-  explosion: "#ff9f43",
+  trajectory: "rgba(185, 74, 58, 0.92)",
+  trajectoryGlow: "rgba(185, 74, 58, 0.26)",
+  explosion: "#b94a3a",
 } as const;
+
+function drawOutlinedText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  opts: { font: string; fill: string; outline: string; outlineWidth: number },
+) {
+  ctx.save();
+  ctx.font = opts.font;
+  ctx.lineJoin = "round";
+  ctx.miterLimit = 2;
+  ctx.lineWidth = opts.outlineWidth;
+  ctx.strokeStyle = opts.outline;
+  ctx.strokeText(text, x, y);
+  ctx.fillStyle = opts.fill;
+  ctx.fillText(text, x, y);
+  ctx.restore();
+}
+
+const TEXT_OUTLINE_DARK = "rgba(0,0,0,0.75)";
+
+function hash2i(x: number, y: number): number {
+  // Deterministic 32-bit hash (fast, stable for procedural textures)
+  let h = x | 0;
+  h = Math.imul(h ^ 0x9e3779b9, 0x85ebca6b);
+  h ^= (y | 0) + 0x7f4a7c15 + (h << 6) + (h >> 2);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  h ^= h >>> 16;
+  return h >>> 0;
+}
+
+function rand01(seed: number): number {
+  // xorshift32 -> [0, 1)
+  let x = seed >>> 0;
+  x ^= x << 13;
+  x ^= x >>> 17;
+  x ^= x << 5;
+  // IMPORTANT: do not bitwise-AND with 0xffffffff here.
+  // In JS, bitwise ops produce signed 32-bit ints, which can become negative.
+  // Using >>> 0 keeps it unsigned.
+  return (x >>> 0) / 0x100000000;
+}
+
+function drawStarfield(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  // Space backdrop (subtle, readable)
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, "#07090d");
+  g.addColorStop(0.55, "#05070a");
+  g.addColorStop(1, "#030407");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+
+  // Very light nebula haze (kept restrained)
+  const haze1 = ctx.createRadialGradient(w * 0.18, h * 0.22, 0, w * 0.18, h * 0.22, Math.max(w, h) * 0.65);
+  haze1.addColorStop(0, "rgba(43, 195, 180, 0.05)");
+  haze1.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = haze1;
+  ctx.fillRect(0, 0, w, h);
+
+  const haze2 = ctx.createRadialGradient(w * 0.82, h * 0.18, 0, w * 0.82, h * 0.18, Math.max(w, h) * 0.65);
+  haze2.addColorStop(0, "rgba(197, 160, 91, 0.04)");
+  haze2.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = haze2;
+  ctx.fillRect(0, 0, w, h);
+
+  // Deterministic stars (stable across frames)
+  const count = Math.round((w * h) / 18000);
+  ctx.save();
+  ctx.globalCompositeOperation = "screen";
+  for (let i = 0; i < count; i++) {
+    const s = hash2i(i * 97 + 13, i * 193 + 37);
+    const x = rand01(s) * w;
+    const y = rand01(s ^ 0x7a3c2d1b) * h;
+    const r = 0.6 + rand01(s ^ 0x1b873593) * 1.4;
+    const a = 0.10 + rand01(s ^ 0x85ebca6b) * 0.26;
+    ctx.fillStyle = `rgba(230, 242, 255, ${a.toFixed(3)})`;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawMoonTexture(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number) {
+  // Speckles + crater rings clipped to the circle. Deterministic per circle.
+  const baseSeed = hash2i(Math.round(cx * 10), Math.round(cy * 10)) ^ hash2i(Math.round(r * 10), 0x1234);
+
+  // Performance guard: most terrains have many small circles.
+  // Only apply the expensive texture to medium/large rocks.
+  if (r < 22) return;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.clip();
+
+  // Subtle directional shading (top-left lit)
+  const shade = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.35, r * 0.05, cx, cy, r * 1.05);
+  shade.addColorStop(0, "rgba(255,255,255,0.12)");
+  shade.addColorStop(1, "rgba(0,0,0,0.20)");
+  ctx.fillStyle = shade;
+  ctx.fillRect(cx - r - 2, cy - r - 2, r * 2 + 4, r * 2 + 4);
+
+  // Speckles
+  // Keep counts low to avoid frame drops on maps with many circles.
+  const speckCount = Math.min(42, Math.max(18, Math.round(r * 0.55)));
+  for (let i = 0; i < speckCount; i++) {
+    const s = baseSeed ^ hash2i(i * 131, i * 313);
+    const t = rand01(s);
+    const u = rand01(s ^ 0x9e3779b9);
+    const ang = t * Math.PI * 2;
+    const rad = Math.sqrt(u) * (r * 0.98);
+    const x = cx + Math.cos(ang) * rad;
+    const y = cy + Math.sin(ang) * rad;
+    const dotR = 0.5 + rand01(s ^ 0x7f4a7c15) * 1.6;
+    const isDark = rand01(s ^ 0xc2b2ae35) < 0.72;
+    const alpha = isDark ? 0.08 + rand01(s ^ 0x85ebca6b) * 0.14 : 0.05 + rand01(s ^ 0x1b873593) * 0.10;
+    ctx.fillStyle = isDark
+      ? `rgba(10, 12, 14, ${alpha.toFixed(3)})`
+      : `rgba(255, 255, 255, ${alpha.toFixed(3)})`;
+    ctx.beginPath();
+    ctx.arc(x, y, dotR, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Craters (rings)
+  const craterCount = Math.min(5, Math.max(2, Math.round(r / 26)));
+  for (let i = 0; i < craterCount; i++) {
+    const s = baseSeed ^ hash2i(i * 503, i * 877);
+    const ang = rand01(s) * Math.PI * 2;
+    const rad = Math.sqrt(rand01(s ^ 0x7a3c2d1b)) * (r * 0.7);
+    const x = cx + Math.cos(ang) * rad;
+    const y = cy + Math.sin(ang) * rad;
+    const cr = (0.10 + rand01(s ^ 0x1b873593) * 0.22) * r;
+    const ring = Math.max(1.0, cr * 0.22);
+    const rimA = 0.10 + rand01(s ^ 0x85ebca6b) * 0.16;
+    const pitA = 0.10 + rand01(s ^ 0xc2b2ae35) * 0.16;
+
+    // Rim highlight
+    ctx.strokeStyle = `rgba(255,255,255, ${rimA.toFixed(3)})`;
+    ctx.lineWidth = ring;
+    ctx.beginPath();
+    ctx.arc(x - cr * 0.10, y - cr * 0.10, cr, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Inner shadow
+    ctx.strokeStyle = `rgba(0,0,0, ${pitA.toFixed(3)})`;
+    ctx.lineWidth = ring * 0.9;
+    ctx.beginPath();
+    ctx.arc(x + cr * 0.08, y + cr * 0.08, cr * 0.78, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function hashTerrainCircles(circles: Array<{ x: number; y: number; r: number }>): number {
+  // Stable-ish hash for terrain geometry. Rounded to reduce churn.
+  let h = 2166136261;
+  for (let i = 0; i < circles.length; i++) {
+    const c = circles[i]!;
+    const x = (c.x * 10) | 0;
+    const y = (c.y * 10) | 0;
+    const r = (c.r * 10) | 0;
+    h ^= x;
+    h = Math.imul(h, 16777619);
+    h ^= y;
+    h = Math.imul(h, 16777619);
+    h ^= r;
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
 
 function hashToUnit(n: string): number {
   let h = 2166136261;
@@ -60,6 +235,13 @@ export function GameCanvas({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [animT, setAnimT] = useState(0);
   const [cssSize, setCssSize] = useState<{ w: number; h: number }>(() => ({ w: 0, h: 0 }));
+
+  const terrainCacheRef = useRef<{
+    key: number;
+    w: number;
+    h: number;
+    canvas: HTMLCanvasElement;
+  } | null>(null);
 
   const assetsRef = useRef<{
     soldier?: HTMLImageElement;
@@ -125,15 +307,33 @@ export function GameCanvas({
   }, [players]);
 
   useEffect(() => {
-    let raf = 0;
-    let start = performance.now();
-    const tick = (t: number) => {
-      setAnimT(t - start);
+    // Redraw strategy:
+    // - Full-speed RAF only while animating a shot.
+    // - Throttled redraw otherwise (prevents heavy terrain rendering from pegging the main thread).
+    if (!room?.game) return;
+
+    const g = room.game;
+    const lastShot = g.lastShot;
+    const shouldAnimateShot =
+      g.phase === "animating_shot" &&
+      !!lastShot &&
+      lastShot.path.length > 0 &&
+      lastShot.functionVelocity > 0;
+
+    if (shouldAnimateShot) {
+      let raf = 0;
+      let start = performance.now();
+      const tick = (t: number) => {
+        setAnimT(t - start);
+        raf = requestAnimationFrame(tick);
+      };
       raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [room?.game?.lastShot?.startedAtMs, room?.game?.lastShot?.functionString]);
+      return () => cancelAnimationFrame(raf);
+    }
+
+    const id = window.setInterval(() => setAnimT(performance.now()), 220);
+    return () => window.clearInterval(id);
+  }, [room?.game?.phase, room?.game?.lastShot?.startedAtMs, room?.game?.lastShot?.functionString]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -179,11 +379,7 @@ export function GameCanvas({
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cssW, cssH);
 
-    const bg = ctx.createLinearGradient(0, 0, 0, cssH);
-    bg.addColorStop(0, COLORS.backgroundTop);
-    bg.addColorStop(1, COLORS.backgroundBottom);
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, cssW, cssH);
+    drawStarfield(ctx, cssW, cssH);
 
     const vignette = ctx.createRadialGradient(
       cssW / 2,
@@ -198,10 +394,13 @@ export function GameCanvas({
     ctx.fillStyle = vignette;
     ctx.fillRect(0, 0, cssW, cssH);
 
-    ctx.fillStyle = COLORS.text;
-    ctx.font = "14px system-ui";
     const label = room ? `Room: ${room.name} (${room.gameState})` : "No room";
-    ctx.fillText(label, 10, 18);
+    drawOutlinedText(ctx, label, 10, 18, {
+      font: "14px ui-serif, Georgia, serif",
+      fill: COLORS.text,
+      outline: TEXT_OUTLINE_DARK,
+      outlineWidth: 3,
+    });
 
     const planeW = GAME_CONSTANTS.PLANE_LENGTH;
     const planeH = GAME_CONSTANTS.PLANE_HEIGHT;
@@ -221,9 +420,12 @@ export function GameCanvas({
         ctx.fillStyle = p.ready ? COLORS.teamBlue : COLORS.teamRed;
         ctx.arc(px, py, 8, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = COLORS.text;
-        ctx.font = "12px system-ui";
-        ctx.fillText(p.name, px + 12, py + 4);
+        drawOutlinedText(ctx, p.name, px + 12, py + 4, {
+          font: "12px ui-serif, Georgia, serif",
+          fill: COLORS.text,
+          outline: TEXT_OUTLINE_DARK,
+          outlineWidth: 3,
+        });
       }
       ctx.restore();
       return;
@@ -233,18 +435,48 @@ export function GameCanvas({
     const lastShot = g.lastShot;
     const nowMs = Date.now();
 
-    for (const c of g.terrain.circles) {
-      const grad = ctx.createRadialGradient(c.x - c.r * 0.3, c.y - c.r * 0.3, 0, c.x, c.y, c.r);
-      grad.addColorStop(0, COLORS.terrainGradient2);
-      grad.addColorStop(0.7, COLORS.terrainFill);
-      grad.addColorStop(1, COLORS.terrainGradient1);
-      ctx.beginPath();
-      ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
-      ctx.fillStyle = grad;
-      ctx.fill();
-      ctx.strokeStyle = COLORS.terrainStroke;
-      ctx.lineWidth = 2;
-      ctx.stroke();
+    // Terrain is expensive to draw; cache circles into an offscreen canvas.
+    {
+      const circles = g.terrain.circles;
+      const terrainKey = hashTerrainCircles(circles);
+      const cache = terrainCacheRef.current;
+      const targetW = Math.max(1, Math.round(planeW));
+      const targetH = Math.max(1, Math.round(planeH));
+
+      if (!cache || cache.key !== terrainKey || cache.w !== targetW || cache.h !== targetH) {
+        const off = document.createElement("canvas");
+        off.width = targetW;
+        off.height = targetH;
+        const tctx = off.getContext("2d");
+
+        if (tctx) {
+          tctx.clearRect(0, 0, targetW, targetH);
+          for (const c of circles) {
+            // Lunar stone base (keep it "moon" rather than metallic gold)
+            const grad = tctx.createRadialGradient(c.x - c.r * 0.3, c.y - c.r * 0.3, 0, c.x, c.y, c.r);
+            grad.addColorStop(0, "#d9d1bf");
+            grad.addColorStop(0.7, "#b9ac96");
+            grad.addColorStop(1, "#95866d");
+            tctx.beginPath();
+            tctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+            tctx.fillStyle = grad;
+            tctx.fill();
+
+            drawMoonTexture(tctx, c.x, c.y, c.r);
+
+            tctx.strokeStyle = COLORS.terrainStroke;
+            tctx.lineWidth = 2;
+            tctx.stroke();
+          }
+        }
+
+        terrainCacheRef.current = { key: terrainKey, w: targetW, h: targetH, canvas: off };
+      }
+
+      const finalCache = terrainCacheRef.current;
+      if (finalCache) {
+        ctx.drawImage(finalCache.canvas, 0, 0);
+      }
     }
 
     const holesToDraw = g.terrain.holes.slice();
