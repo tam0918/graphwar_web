@@ -1,6 +1,8 @@
+import "dotenv/config";
 import http from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
 import { nanoid } from "nanoid";
+import { generateLlmHint } from "./llmHint";
 import {
   encodeMessage,
   PROTOCOL_VERSION,
@@ -8,7 +10,11 @@ import {
   GAME_CONSTANTS,
   randomGaussian,
   type GameMode,
+  type DifficultyMode,
+  type MatchPreset,
+  type RoomConfig,
   simulateShot,
+  collidePoint,
   type TerrainState,
   type TerrainCircle,
   type PlayerGameState,
@@ -30,11 +36,15 @@ type Client = {
 type Room = {
   id: string;
   name: string;
+  ownerClientId: string;
+  config: RoomConfig;
   clients: Set<WebSocket>;
+  bots: Map<string, { clientId: string; name: string }>;
   gameState: "lobby" | "in_game";
   lastGameOver?: LastGameOver;
   game?: {
     mode: GameMode;
+    difficulty: DifficultyMode;
     terrain: TerrainState;
     players: PlayerGameState[];
     currentTurnIndex: number;
@@ -51,6 +61,7 @@ type Room = {
       path: Array<{ x: number; y: number }>;
     };
     timers: Set<NodeJS.Timeout>;
+    botTurnScheduledFor?: string;
   };
 };
 
@@ -76,10 +87,42 @@ function now() {
   return Date.now();
 }
 
+function maxPlayersForPreset(preset: MatchPreset): number {
+  switch (preset) {
+    case "2v2":
+      return 4;
+    case "4v4":
+      return 8;
+    case "1vX":
+    default:
+      return 6;
+  }
+}
+
+function makeRoomConfig(partial?: Partial<Pick<RoomConfig, "preset" | "difficulty">>): RoomConfig {
+  const preset: MatchPreset = partial?.preset ?? "1vX";
+  const difficulty: DifficultyMode = partial?.difficulty ?? "practice";
+  return { preset, difficulty, maxPlayers: maxPlayersForPreset(preset) };
+}
+
+function isBotId(clientId: string): boolean {
+  return clientId.startsWith("bot_");
+}
+
+function roomPopulation(room: Room): number {
+  return room.clients.size + room.bots.size;
+}
+
+function requireRoomOwner(client: Client, room: Room): boolean {
+  return client.clientId === room.ownerClientId;
+}
+
 function asRoomState(room: Room): RoomState {
   const base = {
     id: room.id,
     name: room.name,
+    ownerClientId: room.ownerClientId,
+    config: room.config,
     players: [] as PlayerState[],
     gameState: room.gameState,
     lastGameOver: room.lastGameOver,
@@ -91,6 +134,10 @@ function asRoomState(room: Room): RoomState {
     if (!c) continue;
     base.players.push({ clientId: c.clientId, name: c.name, ready: c.ready });
   }
+
+  for (const b of room.bots.values()) {
+    base.players.push({ clientId: b.clientId, name: b.name, ready: true, isBot: true });
+  }
   base.players.sort((a, b) => a.name.localeCompare(b.name));
 
   if (room.gameState !== "in_game" || !room.game) return base;
@@ -100,6 +147,7 @@ function asRoomState(room: Room): RoomState {
     ...base,
     game: {
       mode: room.game.mode,
+      difficulty: room.game.difficulty,
       terrain: room.game.terrain,
       currentTurnClientId,
       timeTurnStarted: room.game.timeTurnStarted,
@@ -143,8 +191,11 @@ function getLobbyState(): RoomSummary[] {
     rooms.push({
       id: room.id,
       name: room.name,
-      numPlayers: room.clients.size,
+      numPlayers: roomPopulation(room),
       gameState: room.gameState,
+      preset: room.config.preset,
+      difficulty: room.config.difficulty,
+      maxPlayers: room.config.maxPlayers,
     });
   }
   rooms.sort((a, b) => a.name.localeCompare(b.name));
@@ -237,6 +288,14 @@ function leaveRoom(ws: WebSocket) {
 
   room.clients.delete(ws);
 
+  // Reassign owner if needed (bots cannot own rooms).
+  if (client.clientId === room.ownerClientId) {
+    const nextOwner = Array.from(room.clients)
+      .map((s) => clientsBySocket.get(s))
+      .find(Boolean);
+    if (nextOwner) room.ownerClientId = nextOwner.clientId;
+  }
+
   if (room.clients.size === 0) {
     if (room.game) {
       for (const t of room.game.timers) clearTimeout(t);
@@ -255,6 +314,16 @@ function joinRoom(ws: WebSocket, room: Room) {
   const client = clientsBySocket.get(ws);
   if (!client) return;
 
+  if (room.gameState === "in_game") {
+    send(ws, { type: "error", message: "Cannot join a room mid-game" });
+    return;
+  }
+
+  if (roomPopulation(room) >= room.config.maxPlayers) {
+    send(ws, { type: "error", message: "Room is full" });
+    return;
+  }
+
   if (client.roomId && client.roomId !== room.id) leaveRoom(ws);
 
   client.roomId = room.id;
@@ -270,6 +339,32 @@ function distSq(a: { x: number; y: number }, b: { x: number; y: number }) {
   const dx = a.x - b.x;
   const dy = a.y - b.y;
   return dx * dx + dy * dy;
+}
+
+function distPointToSegmentSq(p: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }): number {
+  const abx = b.x - a.x;
+  const aby = b.y - a.y;
+  const apx = p.x - a.x;
+  const apy = p.y - a.y;
+  const abLenSq = abx * abx + aby * aby;
+  if (abLenSq <= 1e-9) return distSq(p, a);
+  const t = Math.max(0, Math.min(1, (apx * abx + apy * aby) / abLenSq));
+  const proj = { x: a.x + t * abx, y: a.y + t * aby };
+  return distSq(p, proj);
+}
+
+function pickRelevantObstacles(args: {
+  shooter: { x: number; y: number };
+  target: { x: number; y: number };
+  terrain: TerrainState;
+}): { circles: Array<{ x: number; y: number; r: number }>; holes: Array<{ x: number; y: number; r: number }> } {
+  const { terrain } = args;
+  // Provide full obstacle coordinates so the model can avoid any blocker,
+  // not just those near the straight corridor.
+  return {
+    circles: terrain.circles.map((c) => ({ x: c.x, y: c.y, r: c.r })),
+    holes: terrain.holes.map((h) => ({ x: h.x, y: h.y, r: h.r })),
+  };
 }
 
 function circlesTooClose(a: TerrainCircle, b: TerrainCircle, gap: number): boolean {
@@ -417,6 +512,100 @@ function advanceTurn(room: Room): void {
   }
 
   g.timeTurnStarted = now();
+
+  maybeScheduleBotTurn(room);
+}
+
+function selectNearestEnemyTarget(g: NonNullable<Room["game"]>, shooter: PlayerGameState): { x: number; y: number } | null {
+  let best: { x: number; y: number } | null = null;
+  let bestD = Number.POSITIVE_INFINITY;
+
+  for (const p of g.players) {
+    if (p.team === shooter.team) continue;
+    for (const s of p.soldiers) {
+      if (!s.alive) continue;
+      const d = distSq({ x: s.x, y: s.y }, { x: shooter.soldiers[shooter.currentTurnSoldier]!.x, y: shooter.soldiers[shooter.currentTurnSoldier]!.y });
+      if (d < bestD) {
+        bestD = d;
+        best = { x: s.x, y: s.y };
+      }
+    }
+  }
+
+  return best;
+}
+
+function botChooseFunction(mode: GameMode, dxLocal: number, dyLocal: number): string {
+  // Keep it intentionally simple; Gemini (if configured) provides better suggestions.
+  // These functions are interpreted in shooter-local coordinates.
+  if (mode === "normal") {
+    const slope = dxLocal !== 0 ? dyLocal / dxLocal : 0;
+    const m = Math.max(-6, Math.min(6, slope));
+    const mm = Math.round(m * 10) / 10;
+    if (Math.abs(mm) < 0.2) return "0";
+    return `${mm}*x`;
+  }
+  if (mode === "fst_ode") {
+    // dy/dx = k
+    const slope = dxLocal !== 0 ? dyLocal / dxLocal : 0;
+    const k = Math.max(-6, Math.min(6, slope));
+    const kk = Math.round(k * 10) / 10;
+    return `${kk}`;
+  }
+  // snd_ode: y'' = 0 gives straight-ish trajectory depending on angle.
+  return "0";
+}
+
+function maybeScheduleBotTurn(room: Room): void {
+  if (!room.game || room.gameState !== "in_game") return;
+  const g = room.game;
+  if (g.phase !== "playing") return;
+
+  const turnPlayer = g.players[g.currentTurnIndex];
+  if (!turnPlayer) return;
+
+  if (!isBotId(turnPlayer.clientId)) {
+    g.botTurnScheduledFor = undefined;
+    return;
+  }
+
+  if (g.botTurnScheduledFor === turnPlayer.clientId) return;
+  g.botTurnScheduledFor = turnPlayer.clientId;
+
+  schedule(room, 900, () => {
+    const gg = room.game;
+    if (!gg || gg.phase !== "playing") return;
+    const tp = gg.players[gg.currentTurnIndex];
+    if (!tp || tp.clientId !== turnPlayer.clientId) return;
+
+    const shooterSoldier = tp.soldiers[tp.currentTurnSoldier];
+    if (!shooterSoldier || !shooterSoldier.alive) {
+      advanceTurn(room);
+      broadcast(room, { type: "room.state", room: getRoomState(room) });
+      broadcastLobbyState();
+      return;
+    }
+
+    const target = selectNearestEnemyTarget(gg, tp);
+    const inverted = tp.team === 2;
+    const dxLocal = inverted ? shooterSoldier.x - (target?.x ?? shooterSoldier.x) : (target?.x ?? shooterSoldier.x) - shooterSoldier.x;
+    const dyLocal = -( (target?.y ?? shooterSoldier.y) - shooterSoldier.y );
+
+    if (gg.mode === "snd_ode") {
+      const EPS = 1e-3;
+      const a = (Math.random() - 0.5) * (Math.PI / 2);
+      shooterSoldier.angle = Math.max(-Math.PI / 2 + EPS, Math.min(Math.PI / 2 - EPS, a));
+    }
+
+    const f = botChooseFunction(gg.mode, dxLocal, dyLocal);
+    const err = fireShot(room, tp.clientId, f);
+    if (err) {
+      // If bot failed (e.g. malformed), skip its turn.
+      advanceTurn(room);
+      broadcast(room, { type: "room.state", room: getRoomState(room) });
+      broadcastLobbyState();
+    }
+  });
 }
 
 function isGameOver(room: Room): boolean {
@@ -436,24 +625,58 @@ function startGame(room: Room): void {
   // New match: clear last result banner.
   room.lastGameOver = undefined;
 
-  const players: PlayerGameState[] = [];
-  const sorted = Array.from(room.clients)
-    .map((ws) => clientsBySocket.get(ws))
-    .filter(Boolean)
-    .map((c) => c!)
-    .sort((a, b) => a.clientId.localeCompare(b.clientId));
+  if (room.clients.size < 1) {
+    throw new Error("At least one human player is required");
+  }
 
-  // Alternate teams similar to Java reorder behavior (simplified deterministic).
-  let team: 1 | 2 = Math.random() < 0.5 ? 1 : 2;
-  for (const c of sorted) {
+  const total = roomPopulation(room);
+  if (room.config.preset === "2v2" && total !== 4) {
+    throw new Error("2v2 requires exactly 4 players (humans + bots)");
+  }
+  if (room.config.preset === "4v4" && total !== 8) {
+    throw new Error("4v4 requires exactly 8 players (humans + bots)");
+  }
+  if (room.config.preset === "1vX" && (total < 2 || total > 6)) {
+    throw new Error("1vX requires 2-6 players (humans + bots)");
+  }
+
+  const participants: Array<{ clientId: string; name: string; isHuman: boolean }> = [];
+  for (const ws of room.clients) {
+    const c = clientsBySocket.get(ws);
+    if (!c) continue;
+    participants.push({ clientId: c.clientId, name: c.name, isHuman: true });
+  }
+  for (const b of room.bots.values()) participants.push({ clientId: b.clientId, name: b.name, isHuman: false });
+
+  // Stable ordering; ensure owner is first for 1vX so they are the "1".
+  participants.sort((a, b) => a.clientId.localeCompare(b.clientId));
+  if (room.config.preset === "1vX") {
+    const idx = participants.findIndex((p) => p.clientId === room.ownerClientId);
+    if (idx > 0) {
+      const [owner] = participants.splice(idx, 1);
+      participants.unshift(owner);
+    }
+  }
+
+  const players: PlayerGameState[] = [];
+  for (let i = 0; i < participants.length; i++) {
+    const p = participants[i]!;
+    let team: 1 | 2 = 1;
+    if (room.config.preset === "1vX") {
+      team = i === 0 ? 1 : 2;
+    } else if (room.config.preset === "2v2") {
+      team = i < 2 ? 1 : 2;
+    } else if (room.config.preset === "4v4") {
+      team = i < 4 ? 1 : 2;
+    }
+
     players.push({
-      clientId: c.clientId,
-      name: c.name,
+      clientId: p.clientId,
+      name: p.name,
       team,
       soldiers: new Array(1).fill(null).map(() => ({ x: 0, y: 0, angle: 0, alive: true })),
       currentTurnSoldier: 0,
     });
-    team = team === 1 ? 2 : 1;
   }
 
   const circles = generateCircles();
@@ -473,6 +696,7 @@ function startGame(room: Room): void {
   room.gameState = "in_game";
   room.game = {
     mode: "normal",
+    difficulty: room.config.difficulty,
     terrain,
     players,
     currentTurnIndex: startIdx,
@@ -480,7 +704,93 @@ function startGame(room: Room): void {
     phase: "playing",
     timers: new Set<NodeJS.Timeout>(),
   };
+
+  maybeScheduleBotTurn(room);
 }
+
+function fireShot(room: Room, byClientId: string, functionStringRaw: string): string | null {
+  if (!room.game) return "Game not started";
+  const g = room.game;
+
+  if (g.phase === "animating_shot") return "Shot is already animating";
+
+  const turnPlayer = g.players[g.currentTurnIndex];
+  if (!turnPlayer || turnPlayer.clientId !== byClientId) return "Not your turn";
+
+  const functionString = functionStringRaw.trim();
+  if (!functionString) return "Function is required";
+
+  let shot;
+  try {
+    shot = simulateShot({
+      mode: g.mode,
+      functionString,
+      terrain: g.terrain,
+      players: g.players,
+      currentTurnIndex: g.currentTurnIndex,
+    });
+  } catch {
+    return "Malformed function";
+  }
+
+  const startedAtMs = now();
+  const functionVelocity = GAME_CONSTANTS.FUNCTION_VELOCITY;
+  g.phase = "animating_shot";
+  g.lastShot = {
+    byClientId,
+    functionString,
+    fireAngle: shot.fireAngle,
+    startedAtMs,
+    functionVelocity,
+    explosion: shot.explosion,
+    hits: shot.hits,
+    path: shot.path,
+  };
+
+  for (const h of shot.hits) {
+    const killAt = startedAtMs + Math.floor((h.killStep * 1000) / functionVelocity);
+    schedule(room, killAt - now(), () => {
+      const gg = room.game;
+      if (!gg || gg.phase !== "animating_shot" || gg.lastShot?.startedAtMs !== startedAtMs) return;
+      const target = gg.players.find((p) => p.clientId === h.targetClientId);
+      const sol = target?.soldiers[h.soldierIndex];
+      if (sol) sol.alive = false;
+      broadcast(room, { type: "room.state", room: getRoomState(room) });
+    });
+  }
+
+  const drawDurationMs = Math.floor((shot.path.length * 1000) / functionVelocity);
+  const explodeAtMs = startedAtMs + drawDurationMs;
+
+  schedule(room, explodeAtMs - now(), () => {
+    const gg = room.game;
+    if (!gg || gg.phase !== "animating_shot" || gg.lastShot?.startedAtMs !== startedAtMs) return;
+    gg.terrain.holes.push(shot.explosion);
+    if (gg.lastShot) gg.lastShot.path = [];
+    broadcast(room, { type: "room.state", room: getRoomState(room) });
+  });
+
+  schedule(room, explodeAtMs + GAME_CONSTANTS.NEXT_TURN_DELAY_MS - now(), () => {
+    const gg = room.game;
+    if (!gg || gg.lastShot?.startedAtMs !== startedAtMs) return;
+
+    if (isGameOver(room)) {
+      endGame(room);
+      broadcast(room, { type: "room.state", room: getRoomState(room) });
+      broadcastLobbyState();
+      return;
+    }
+
+    advanceTurn(room);
+    broadcast(room, { type: "room.state", room: getRoomState(room) });
+    broadcastLobbyState();
+  });
+
+  broadcast(room, { type: "room.state", room: getRoomState(room) });
+  broadcastLobbyState();
+  return null;
+}
+
 
 function schedule(room: Room, delayMs: number, fn: () => void) {
   if (!room.game) return;
@@ -526,7 +836,10 @@ function handleMessage(ws: WebSocket, msg: ClientToServerMessage) {
       const room: Room = {
         id: nanoid(8),
         name: roomName,
+        ownerClientId: client.clientId,
+        config: makeRoomConfig(msg.config),
         clients: new Set<WebSocket>(),
+        bots: new Map(),
         gameState: "lobby",
       };
       roomsById.set(room.id, room);
@@ -569,13 +882,23 @@ function handleMessage(ws: WebSocket, msg: ClientToServerMessage) {
       const room = roomsById.get(client.roomId);
       if (!room) return;
 
+      if (room.gameState !== "lobby") {
+        send(ws, { type: "error", message: "Game already started" });
+        return;
+      }
+
       const allReady = Array.from(room.clients).every((s) => clientsBySocket.get(s)?.ready);
       if (!allReady) {
         send(ws, { type: "error", message: "All players must be ready" });
         return;
       }
 
-      startGame(room);
+      try {
+        startGame(room);
+      } catch (e) {
+        send(ws, { type: "error", message: e instanceof Error ? e.message : "Unable to start game" });
+        return;
+      }
       broadcast(room, { type: "room.state", room: getRoomState(room) });
       broadcastLobbyState();
       return;
@@ -615,6 +938,94 @@ function handleMessage(ws: WebSocket, msg: ClientToServerMessage) {
       return;
     }
 
+    case "game.setDifficulty":
+    case "room.setConfig": {
+      if (!client.roomId) {
+        send(ws, { type: "error", message: "Not in a room" });
+        return;
+      }
+      const room = roomsById.get(client.roomId);
+      if (!room) return;
+      if (room.gameState !== "lobby") {
+        send(ws, { type: "error", message: "Cannot change settings mid-game" });
+        return;
+      }
+      if (!requireRoomOwner(client, room)) {
+        send(ws, { type: "error", message: "Only the room owner can change settings" });
+        return;
+      }
+
+      const incoming = msg.type === "game.setDifficulty" ? { difficulty: msg.difficulty } : msg.config;
+      const nextPreset = incoming.preset ?? room.config.preset;
+      const nextDifficulty = incoming.difficulty ?? room.config.difficulty;
+      const nextMax = maxPlayersForPreset(nextPreset);
+
+      if (roomPopulation(room) > nextMax) {
+        send(ws, { type: "error", message: `Too many players for ${nextPreset} (max ${nextMax})` });
+        return;
+      }
+
+      room.config = { preset: nextPreset, difficulty: nextDifficulty, maxPlayers: nextMax };
+      broadcast(room, { type: "room.state", room: getRoomState(room) });
+      broadcastLobbyState();
+      return;
+    }
+
+    case "room.addBot": {
+      if (!client.roomId) {
+        send(ws, { type: "error", message: "Not in a room" });
+        return;
+      }
+      const room = roomsById.get(client.roomId);
+      if (!room) return;
+      if (room.gameState !== "lobby") {
+        send(ws, { type: "error", message: "Cannot add bots mid-game" });
+        return;
+      }
+      if (!requireRoomOwner(client, room)) {
+        send(ws, { type: "error", message: "Only the room owner can add bots" });
+        return;
+      }
+      if (roomPopulation(room) >= room.config.maxPlayers) {
+        send(ws, { type: "error", message: "Room is full" });
+        return;
+      }
+
+      const botId = `bot_${nanoid(6)}`;
+      const botNameBase = msg.name?.trim().slice(0, 24);
+      const botName = botNameBase && botNameBase.length > 0 ? botNameBase : `Bot ${room.bots.size + 1}`;
+      room.bots.set(botId, { clientId: botId, name: botName });
+
+      broadcast(room, { type: "room.state", room: getRoomState(room) });
+      broadcastLobbyState();
+      return;
+    }
+
+    case "room.removeBot": {
+      if (!client.roomId) {
+        send(ws, { type: "error", message: "Not in a room" });
+        return;
+      }
+      const room = roomsById.get(client.roomId);
+      if (!room) return;
+      if (room.gameState !== "lobby") {
+        send(ws, { type: "error", message: "Cannot remove bots mid-game" });
+        return;
+      }
+      if (!requireRoomOwner(client, room)) {
+        send(ws, { type: "error", message: "Only the room owner can remove bots" });
+        return;
+      }
+      if (!isBotId(msg.clientId) || !room.bots.has(msg.clientId)) {
+        send(ws, { type: "error", message: "Bot not found" });
+        return;
+      }
+      room.bots.delete(msg.clientId);
+      broadcast(room, { type: "room.state", room: getRoomState(room) });
+      broadcastLobbyState();
+      return;
+    }
+
     case "game.setAngle": {
       if (!client.roomId) {
         send(ws, { type: "error", message: "Not in a room" });
@@ -651,100 +1062,438 @@ function handleMessage(ws: WebSocket, msg: ClientToServerMessage) {
         return;
       }
 
-      const g = room.game;
+      const err = fireShot(room, client.clientId, msg.functionString);
+      if (err) send(ws, { type: "error", message: err });
+      return;
+    }
 
-      if (g.phase === "animating_shot") {
-        send(ws, { type: "error", message: "Shot is already animating" });
+    case "hint.request": {
+      if (!client.roomId) {
+        send(ws, { type: "error", message: "Not in a room" });
+        return;
+      }
+      const room = roomsById.get(client.roomId);
+      if (!room?.game || room.gameState !== "in_game") {
+        send(ws, { type: "error", message: "Game not started" });
+        return;
+      }
+      if (room.game.difficulty !== "practice") {
+        send(ws, { type: "error", message: "Hints are disabled in hard mode" });
         return;
       }
 
+      const g = room.game;
       const turnPlayer = g.players[g.currentTurnIndex];
       if (!turnPlayer || turnPlayer.clientId !== client.clientId) {
-        send(ws, { type: "error", message: "Not your turn" });
+        send(ws, { type: "error", message: "Hints are only available on your turn" });
         return;
       }
 
-      const functionString = msg.functionString.trim();
-      if (!functionString) {
-        send(ws, { type: "error", message: "Function is required" });
-        return;
-      }
+      void (async () => {
+        try {
+          const shooterSoldier = turnPlayer.soldiers[turnPlayer.currentTurnSoldier];
+          if (!shooterSoldier) throw new Error("No shooter soldier");
+          const payload = (msg as any).payload as
+            | { shooter?: { x: number; y: number }; target?: { x: number; y: number }; debug?: boolean }
+            | undefined;
+          const debugRequested = payload?.debug === true;
+          const debugAlwaysOnError = process.env.AI_DEBUG_ON_ERROR === "1";
+          const debugEvents: any[] = [];
 
-      let shot;
-      try {
-        shot = simulateShot({
-          mode: g.mode,
-          functionString,
-          terrain: g.terrain,
-          players: g.players,
-          currentTurnIndex: g.currentTurnIndex,
-        });
-      } catch {
-        send(ws, { type: "error", message: "Malformed function" });
-        return;
-      }
+          const inverted = turnPlayer.team === 2;
 
-      // Begin animation timeline (Java-like)
-      const startedAtMs = now();
-      const functionVelocity = GAME_CONSTANTS.FUNCTION_VELOCITY;
-      g.phase = "animating_shot";
-      g.lastShot = {
-        byClientId: client.clientId,
-        functionString,
-        fireAngle: shot.fireAngle,
-        startedAtMs,
-        functionVelocity,
-        explosion: shot.explosion,
-        hits: shot.hits,
-        path: shot.path,
-      };
+          const toGameCoordsFromPixels = (p: { x: number; y: number }) => {
+            const { PLANE_LENGTH, PLANE_HEIGHT, PLANE_GAME_LENGTH } = GAME_CONSTANTS;
+            let x = p.x;
+            const y = p.y;
+            if (inverted) x = PLANE_LENGTH - x;
+            return {
+              x: (PLANE_GAME_LENGTH * (x - PLANE_LENGTH / 2)) / PLANE_LENGTH,
+              y: (PLANE_GAME_LENGTH * (-y + PLANE_HEIGHT / 2)) / PLANE_LENGTH,
+            };
+          };
 
-      // Server schedules kills and explosion application
-      for (const h of shot.hits) {
-        const killAt = startedAtMs + Math.floor((h.killStep * 1000) / functionVelocity);
-        schedule(room, killAt - now(), () => {
-          const gg = room.game;
-          if (!gg || gg.phase !== "animating_shot" || gg.lastShot?.startedAtMs !== startedAtMs) return;
-          const target = gg.players.find((p) => p.clientId === h.targetClientId);
-          const sol = target?.soldiers[h.soldierIndex];
-          if (sol) sol.alive = false;
-          broadcast(room, { type: "room.state", room: getRoomState(room) });
-        });
-      }
+          const shooterGame = toGameCoordsFromPixels({ x: shooterSoldier.x, y: shooterSoldier.y });
 
-      const drawDurationMs = Math.floor((shot.path.length * 1000) / functionVelocity);
-      const explodeAtMs = startedAtMs + drawDurationMs;
+          const isAheadTarget = (t: { x: number; y: number }) => {
+            const tg = toGameCoordsFromPixels({ x: t.x, y: t.y });
+            const dx = tg.x - shooterGame.x;
+            return Number.isFinite(dx) && dx > 0.15;
+          };
 
-      // Apply terrain hole at end of drawing
-      schedule(room, explodeAtMs - now(), () => {
-        const gg = room.game;
-        if (!gg || gg.phase !== "animating_shot" || gg.lastShot?.startedAtMs !== startedAtMs) return;
-        gg.terrain.holes.push(shot.explosion);
-        // Clear the projectile path as soon as drawing finishes.
-        // This makes it obvious to the other player that the shot is done.
-        if (gg.lastShot) gg.lastShot.path = [];
-        broadcast(room, { type: "room.state", room: getRoomState(room) });
-      });
+          const selectNearestEnemyTargetAhead = () => {
+            let best: { x: number; y: number } | null = null;
+            let bestD = Number.POSITIVE_INFINITY;
+            for (const p of g.players) {
+              if (p.team === turnPlayer.team) continue;
+              for (const s of p.soldiers) {
+                if (!s.alive) continue;
+                const cand = { x: s.x, y: s.y };
+                if (!isAheadTarget(cand)) continue;
+                const d = distSq({ x: shooterSoldier.x, y: shooterSoldier.y }, cand);
+                if (d < bestD) {
+                  bestD = d;
+                  best = cand;
+                }
+              }
+            }
+            return best;
+          };
 
-      // Next turn after NEXT_TURN_DELAY
-      schedule(room, explodeAtMs + GAME_CONSTANTS.NEXT_TURN_DELAY_MS - now(), () => {
-        const gg = room.game;
-        if (!gg || gg.lastShot?.startedAtMs !== startedAtMs) return;
+          // Use the payload target if provided; map it to the nearest alive enemy soldier.
+          const desiredTarget = payload?.target;
+          let target: { x: number; y: number } | null = null;
+          if (desiredTarget && Number.isFinite(desiredTarget.x) && Number.isFinite(desiredTarget.y)) {
+            let best = Number.POSITIVE_INFINITY;
+            for (const p of g.players) {
+              if (p.team === turnPlayer.team) continue;
+              for (const s of p.soldiers) {
+                if (!s.alive) continue;
+                const d = distSq({ x: s.x, y: s.y }, { x: desiredTarget.x, y: desiredTarget.y });
+                if (d < best) {
+                  best = d;
+                  const cand = { x: s.x, y: s.y };
+                  if (isAheadTarget(cand)) target = cand;
+                }
+              }
+            }
+          }
+          if (!target) target = selectNearestEnemyTargetAhead() ?? selectNearestEnemyTarget(g, turnPlayer);
+          if (!target) throw new Error("No valid target");
 
-        if (isGameOver(room)) {
-          endGame(room);
-          broadcast(room, { type: "room.state", room: getRoomState(room) });
-          broadcastLobbyState();
-          return;
+          // If the target is behind relative to the shoot direction, re-pick an ahead target to avoid impossible hints.
+          if (!isAheadTarget(target)) {
+            const ahead = selectNearestEnemyTargetAhead();
+            if (ahead) target = ahead;
+          }
+          const dxLocalPixels = inverted ? shooterSoldier.x - target.x : target.x - shooterSoldier.x;
+          const dyLocalGameSign = -(target.y - shooterSoldier.y);
+
+          const fallbackFn = botChooseFunction(g.mode, dxLocalPixels, dyLocalGameSign);
+
+          const distSq2 = (a: { x: number; y: number }, b: { x: number; y: number }) => {
+            const dx = a.x - b.x;
+            const dy = a.y - b.y;
+            return dx * dx + dy * dy;
+          };
+
+          const targetGame = toGameCoordsFromPixels({ x: target.x, y: target.y });
+          const dxLocalGame = targetGame.x - shooterGame.x;
+          const dyLocalGame = targetGame.y - shooterGame.y;
+
+          const materializeTemplateFunction = (fnRaw: string) => {
+            let fn = String(fnRaw || "");
+
+            // Some LLMs return template variables (dx, dy, dy/dx). Graphwar does not support these symbols,
+            // so we substitute them using the current local-game target vector.
+            const dx = dxLocalGame;
+            const dy = dyLocalGame;
+            const m = Number.isFinite(dx) && Math.abs(dx) > 1e-12 ? dy / dx : 0;
+
+            // Replace dy/dx first to avoid clobbering "dy" or "dx" replacements.
+            fn = fn.replace(/\bdy\s*\/\s*dx\b/gi, `(${m.toFixed(8)})`);
+            fn = fn.replace(/\bdy\b/gi, `(${dy.toFixed(8)})`);
+            fn = fn.replace(/\bdx\b/gi, `(${dx.toFixed(8)})`);
+
+            // Remove double spaces introduced by substitutions.
+            fn = fn.replace(/\s+/g, " ").trim();
+            return fn;
+          };
+
+          const isShotGoodEnough = (fn: string) => {
+            const shot = simulateShot({
+              mode: g.mode,
+              functionString: fn,
+              terrain: g.terrain,
+              players: g.players,
+              currentTurnIndex: g.currentTurnIndex,
+              maxSteps: 3500,
+            });
+            const r = GAME_CONSTANTS.EXPLOSION_RADIUS;
+
+            // Hard rule for practice hints: do not accept any function whose trajectory hits terrain/bounds.
+            // Our physics uses point sampling per step; to avoid "tunneling" through circles between steps,
+            // also sample along each segment in pixel-space.
+            const pathCollidesTerrain = (() => {
+              const pts = shot.path;
+              if (!pts.length) return true;
+
+              const stepPx = 6; // smaller => stricter collision check
+              const terrain = g.terrain;
+
+              const checkPoint = (p: { x: number; y: number }) => collidePoint(terrain, p);
+
+              for (let i = 0; i < pts.length; i++) {
+                const p = pts[i]!;
+                if (checkPoint(p)) return true;
+
+                const prev = i > 0 ? pts[i - 1]! : null;
+                if (!prev) continue;
+
+                const dx = p.x - prev.x;
+                const dy = p.y - prev.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                const steps = Math.max(1, Math.ceil(dist / stepPx));
+                for (let s = 1; s < steps; s++) {
+                  const t = s / steps;
+                  const sp = { x: prev.x + dx * t, y: prev.y + dy * t };
+                  if (checkPoint(sp)) return true;
+                }
+              }
+              return false;
+            })();
+
+            // Use closest approach along the path, not the final collision point.
+            // This avoids incorrectly accepting shots that collide with a blocker near the target line.
+            let bestD2 = Number.POSITIVE_INFINITY;
+            let bestLocalX = Number.NEGATIVE_INFINITY;
+            for (const pt of shot.path) {
+              const d2 = distSq2(pt, target);
+              if (d2 < bestD2) {
+                bestD2 = d2;
+                const ptGame = toGameCoordsFromPixels(pt);
+                bestLocalX = ptGame.x - shooterGame.x;
+              }
+            }
+
+            // Also require meaningful forward progress in LOCAL GAME X.
+            // Otherwise it can clip a circle early and never really threaten the target.
+            const progressOk =
+              Number.isFinite(dxLocalGame) && dxLocalGame > 1e-6
+                ? bestLocalX >= dxLocalGame * 0.85
+                : true;
+
+            const nearTargetOk = bestD2 <= (r * 1.25) * (r * 1.25);
+            return {
+              ok: !pathCollidesTerrain && nearTargetOk && progressOk,
+              shot,
+              lastLocalX: bestLocalX,
+              collided: pathCollidesTerrain,
+              bestD2,
+            };
+          };
+
+          const tryAutoParabolaSearch = () => {
+            if (g.mode !== "normal") return null;
+            if (!Number.isFinite(dxLocalGame) || Math.abs(dxLocalGame) < 1e-6) return null;
+
+            const dx = dxLocalGame;
+            const dy = dyLocalGame;
+            const m = dy / dx;
+
+            // Scan curvature magnitudes; negative a lifts (because x*(x-dx) is negative mid-way).
+            const mags = [0.0005, 0.001, 0.002, 0.004, 0.008, 0.012, 0.02, 0.03, 0.05, 0.08];
+            const candidates: number[] = [];
+            for (const mag of mags) {
+              candidates.push(-mag, mag);
+            }
+
+            for (const a of candidates) {
+              const fn = `${m.toFixed(6)}*x + ${a.toFixed(6)}*x*(x-${dx.toFixed(4)})`;
+              try {
+                validateFunction(fn);
+                const res = isShotGoodEnough(fn);
+                if (res.ok) return { fn, m, a };
+              } catch {
+                // ignore
+              }
+            }
+            return null;
+          };
+
+          const validateFunction = (fn: string) => {
+            // Validate parseability quickly using the current authoritative game state.
+            simulateShot({
+              mode: g.mode,
+              functionString: fn,
+              terrain: g.terrain,
+              players: g.players,
+              currentTurnIndex: g.currentTurnIndex,
+              maxSteps: 400,
+            });
+          };
+
+          try {
+            const llmArgs = {
+              mode: g.mode,
+              shooterTeam: turnPlayer.team,
+              shooter: { x: shooterSoldier.x, y: shooterSoldier.y },
+              target: { x: target.x, y: target.y },
+              obstacles: pickRelevantObstacles({
+                shooter: { x: shooterSoldier.x, y: shooterSoldier.y },
+                target: { x: target.x, y: target.y },
+                terrain: g.terrain,
+              }),
+              dxLocalPixels,
+              dyLocalGameSign,
+            } as const;
+
+            const maxAttempts = (() => {
+              const raw = process.env.AI_HINT_MAX_ATTEMPTS;
+              if (!raw) return 10;
+              const n = Number(raw);
+              if (!Number.isFinite(n) || n <= 0) return 10;
+              return Math.max(1, Math.min(10, Math.floor(n)));
+            })();
+
+            let bestCandidate:
+              | {
+                  functionString: string;
+                  explanation?: string;
+                  bestD2: number;
+                }
+              | null = null;
+
+            let nextFeedback: string | undefined;
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+              const hint = await generateLlmHint(
+                {
+                  ...llmArgs,
+                  validationFeedback: nextFeedback,
+                },
+                debugRequested || debugAlwaysOnError ? (ev) => debugEvents.push(ev) : undefined,
+              );
+
+              try {
+                const fn = materializeTemplateFunction(hint.functionString);
+                validateFunction(fn);
+
+                const evalRes = isShotGoodEnough(fn);
+                const minDistPx = Math.sqrt(evalRes.bestD2);
+
+                if (!evalRes.collided && Number.isFinite(evalRes.bestD2)) {
+                  if (!bestCandidate || evalRes.bestD2 < bestCandidate.bestD2) {
+                    bestCandidate = {
+                      functionString: fn,
+                      explanation: hint.explanation,
+                      bestD2: evalRes.bestD2,
+                    };
+                  }
+                }
+
+                if (evalRes.ok) {
+                  send(ws, {
+                    type: "hint.response",
+                    functionString: fn,
+                    explanation: `${hint.explanation ?? "AI hint."} (attempt ${attempt}/${maxAttempts}, validated no terrain collision)`,
+                    debug: debugRequested ? { events: debugEvents as any } : undefined,
+                  });
+                  return;
+                }
+
+                const lastLocalY = (() => {
+                  const lastGame = toGameCoordsFromPixels(evalRes.shot.lastPoint);
+                  return lastGame.y - shooterGame.y;
+                })();
+
+                // Provide concrete collision/near-miss feedback for the next attempt.
+                nextFeedback =
+                  `Attempt ${attempt}/${maxAttempts} was rejected by the game engine simulation. ` +
+                  (evalRes.collided ? `It collided with terrain/bounds (including between steps). ` : `It did not collide, but missed the target. `) +
+                  `Closest distance to target was ~${minDistPx.toFixed(1)}px. ` +
+                  `It stopped at LocalGame approx (x=${evalRes.lastLocalX.toFixed(3)}, y=${lastLocalY.toFixed(3)}), ` +
+                  `but needs to reach (dx=${dxLocalGame.toFixed(3)}, dy=${dyLocalGame.toFixed(3)}). ` +
+                  `Adjust the curve to increase clearance around the blocking circles and reduce miss distance.`;
+
+                debugEvents.push({
+                  type: "error",
+                  message: `Attempt ${attempt} rejected: collided=${String(evalRes.collided)} minDistPx=${minDistPx.toFixed(
+                    1,
+                  )} lastPoint=(${evalRes.shot.lastPoint.x.toFixed(1)},${evalRes.shot.lastPoint.y.toFixed(1)})`,
+                });
+              } catch {
+                // unparsable function; keep retrying
+                nextFeedback =
+                  `Attempt ${attempt}/${maxAttempts} was rejected because the function was not parseable/executable by the game engine. ` +
+                  `Return a simpler valid expression using only supported tokens.`;
+              }
+            }
+
+            // If no perfect shot found, prefer a deterministic local parabola search.
+            const auto = tryAutoParabolaSearch();
+            if (auto) {
+              send(ws, {
+                type: "hint.response",
+                functionString: auto.fn,
+                explanation:
+                  `Auto-adjusted a parabola to clear terrain and still reach the target (LLM failed after ${maxAttempts} attempts; validated no terrain collision).`,
+                debug: debugRequested ? { events: debugEvents as any } : undefined,
+              });
+              return;
+            }
+
+            // Otherwise, if we have a non-colliding best candidate, return it even if it slightly misses.
+            if (bestCandidate) {
+              send(ws, {
+                type: "hint.response",
+                functionString: bestCandidate.functionString,
+                explanation:
+                  bestCandidate.explanation ??
+                  `Best non-colliding AI hint found after ${maxAttempts} attempts (may still miss slightly; validated no terrain collision).`,
+                debug: debugRequested ? { events: debugEvents as any } : undefined,
+              });
+              return;
+            }
+
+            // Fall back to a safe baseline.
+            send(ws, {
+              type: "hint.response",
+              functionString: fallbackFn,
+              explanation: `AI couldn't find a safe path after ${maxAttempts} attempts; using a safe fallback.`,
+              debug: debugRequested ? { events: debugEvents as any } : undefined,
+            });
+            return;
+          } catch (e) {
+            // LLM can fail or return malformed output; still give a usable hint.
+            const rawReason = e instanceof Error ? e.message : "AI failed";
+
+            const oneLine = String(rawReason)
+              .replace(/\s+/g, " ")
+              .trim()
+              .slice(0, 400);
+
+            const retryInSeconds = (() => {
+              const m = oneLine.match(/Please retry in\s+([0-9]+(?:\.[0-9]+)?)s/i);
+              if (!m) return null;
+              const n = Number(m[1]);
+              return Number.isFinite(n) && n >= 0 ? Math.ceil(n) : null;
+            })();
+
+            const is429 = /LLM request failed \(429\)/i.test(oneLine) || /\bcode\s*[:=]?\s*429\b/i.test(oneLine);
+            const looksLikeQuota = /quota|rate limit|RESOURCE_EXHAUSTED/i.test(oneLine);
+
+            const reasonForUser = (() => {
+              if (is429 || looksLikeQuota) {
+                const suffix = retryInSeconds ? ` Retry in ~${retryInSeconds}s.` : "";
+                return `AI is rate-limited/quota-limited (HTTP 429).${suffix}`;
+              }
+              return oneLine.length ? oneLine : "AI failed";
+            })();
+
+            // Keep the full error server-side for debugging.
+            console.warn("AI hint failed:", rawReason);
+            send(ws, {
+              type: "hint.response",
+              functionString: fallbackFn,
+              explanation: `AI failed (${reasonForUser}); using a safe fallback.`,
+              debug:
+                debugRequested || debugAlwaysOnError
+                  ? {
+                      events: (debugEvents as any[]).concat([
+                        {
+                          type: "error",
+                          message: String(rawReason),
+                        },
+                      ]),
+                    }
+                  : undefined,
+            });
+            return;
+          }
+        } catch (e) {
+          send(ws, { type: "error", message: e instanceof Error ? e.message : "Hint failed" });
         }
-
-        advanceTurn(room);
-        broadcast(room, { type: "room.state", room: getRoomState(room) });
-        broadcastLobbyState();
-      });
-
-      broadcast(room, { type: "room.state", room: getRoomState(room) });
-      broadcastLobbyState();
+      })();
       return;
     }
 

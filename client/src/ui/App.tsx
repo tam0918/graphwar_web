@@ -3,6 +3,8 @@ import {
   encodeMessage,
   GAME_CONSTANTS,
   type GameMode,
+  type DifficultyMode,
+  type MatchPreset,
   simulateShot,
   type ShotResult,
   type RoomState,
@@ -15,7 +17,25 @@ const DEFAULT_WS_URL = "ws://localhost:8080/ws";
 
 type ChatLine = { from: string; text: string; ts: number };
 
+function distSq(a: { x: number; y: number }, b: { x: number; y: number }) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return dx * dx + dy * dy;
+}
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
 export function App() {
+  const debugGemini = (() => {
+    try {
+      return new URLSearchParams(window.location.search).get("debugGemini") === "1";
+    } catch {
+      return false;
+    }
+  })();
+
   const [wsUrl, setWsUrl] = useState(DEFAULT_WS_URL);
   const [name, setName] = useState("Player");
   const [connected, setConnected] = useState(false);
@@ -28,6 +48,8 @@ export function App() {
   const [chat, setChat] = useState<ChatLine[]>([]);
 
   const [newRoomName, setNewRoomName] = useState("My Room");
+  const [newRoomPreset, setNewRoomPreset] = useState<MatchPreset>("1vX");
+  const [newRoomDifficulty, setNewRoomDifficulty] = useState<DifficultyMode>("practice");
   const [chatText, setChatText] = useState("");
 
   const [functionString, setFunctionString] = useState("x");
@@ -88,6 +110,14 @@ export function App() {
   function send(msg: any) {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (msg && typeof msg === "object" && msg.type === "hint.request") {
+      // eslint-disable-next-line no-console
+      console.log("[WS send] hint.request", msg);
+      if (!debugGemini) {
+        // eslint-disable-next-line no-console
+        console.log("Tip: add ?debugGemini=1 to receive server-side LLM HTTP debug events in hint.response");
+      }
+    }
     ws.send(typeof msg === "string" ? msg : encodeMessage(msg));
   }
 
@@ -134,6 +164,19 @@ export function App() {
         }
       } else if (msg.type === "chat.msg") {
         setChat((prev) => prev.concat({ from: msg.from, text: msg.text, ts: msg.ts }));
+      } else if (msg.type === "hint.response") {
+        // eslint-disable-next-line no-console
+        console.log("[WS recv] hint.response", msg);
+        setFunctionString(msg.functionString);
+        if (debugGemini && msg.debug?.events) {
+          // eslint-disable-next-line no-console
+          console.log("[LLM debug events]", msg.debug.events);
+          // eslint-disable-next-line no-console
+          console.log("Network tip: in DevTools -> Network, click WS request, then Frames to see websocket traffic.");
+        }
+        if (msg.explanation) {
+          setChat((prev) => prev.concat({ from: "hint", text: msg.explanation!, ts: Date.now() }));
+        }
       } else if (msg.type === "error") {
         setChat((prev) => prev.concat({ from: "server", text: msg.message, ts: Date.now() }));
       }
@@ -143,6 +186,10 @@ export function App() {
   useEffect(() => {
     // Live trajectory preview while typing, only for the current player.
     if (!inGame || !room?.game || !clientId || !isMyTurn) {
+      setPreviewShot(null);
+      return;
+    }
+    if (room.game.difficulty !== "practice") {
       setPreviewShot(null);
       return;
     }
@@ -235,7 +282,35 @@ export function App() {
             disabled={!connected}
             style={{ flex: 1 }}
           />
-          <button onClick={() => send({ type: "room.create", name: newRoomName })} disabled={!connected}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, opacity: 0.9 }}>
+            preset
+            <select value={newRoomPreset} onChange={(e) => setNewRoomPreset(e.target.value as MatchPreset)} disabled={!connected}>
+              <option value="1vX">1vX (max 6)</option>
+              <option value="2v2">2v2</option>
+              <option value="4v4">4v4</option>
+            </select>
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, opacity: 0.9 }}>
+            mode
+            <select
+              value={newRoomDifficulty}
+              onChange={(e) => setNewRoomDifficulty(e.target.value as DifficultyMode)}
+              disabled={!connected}
+            >
+              <option value="practice">practice (hints)</option>
+              <option value="hard">hard (no hints)</option>
+            </select>
+          </label>
+          <button
+            onClick={() =>
+              send({
+                type: "room.create",
+                name: newRoomName,
+                config: { preset: newRoomPreset, difficulty: newRoomDifficulty },
+              })
+            }
+            disabled={!connected}
+          >
             Create
           </button>
         </div>
@@ -250,7 +325,7 @@ export function App() {
               <div>
                 <strong>{r.name}</strong>
                 <div style={{ fontSize: 12, opacity: 0.8 }}>
-                  players: {r.numPlayers} • state: {r.gameState}
+                  players: {r.numPlayers}/{r.maxPlayers} • preset: {r.preset} • mode: {r.difficulty} • state: {r.gameState}
                 </div>
               </div>
               <button onClick={() => send({ type: "room.join", roomId: r.id })} disabled={!connected}>
@@ -268,16 +343,61 @@ export function App() {
             <div>
               <strong>{room.name}</strong>
               <div style={{ fontSize: 12, opacity: 0.8 }}>
-                state: {room.gameState} • players: {room.players.length}
+                state: {room.gameState} • players: {room.players.length}/{room.config.maxPlayers} • preset: {room.config.preset} • mode: {room.config.difficulty}
               </div>
             </div>
 
             <>
+              {clientId && room.gameState === "lobby" && clientId === room.ownerClientId ? (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "end" }}>
+                  <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, opacity: 0.9 }}>
+                    preset
+                    <select
+                      value={room.config.preset}
+                      onChange={(e) => send({ type: "room.setConfig", config: { preset: e.target.value as MatchPreset } })}
+                      disabled={!connected}
+                    >
+                      <option value="1vX">1vX (max 6)</option>
+                      <option value="2v2">2v2</option>
+                      <option value="4v4">4v4</option>
+                    </select>
+                  </label>
+                  <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, opacity: 0.9 }}>
+                    mode
+                    <select
+                      value={room.config.difficulty}
+                      onChange={(e) =>
+                        send({ type: "room.setConfig", config: { difficulty: e.target.value as DifficultyMode } })
+                      }
+                      disabled={!connected}
+                    >
+                      <option value="practice">practice (hints)</option>
+                      <option value="hard">hard (no hints)</option>
+                    </select>
+                  </label>
+                  <button onClick={() => send({ type: "room.addBot" })} disabled={!connected}>
+                    Add bot
+                  </button>
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, opacity: 0.75 }}>
+                  {clientId === room.ownerClientId ? "" : "Only owner can change preset/mode and add bots."}
+                </div>
+              )}
 
                 <ul style={{ margin: 0, paddingLeft: 18 }}>
                   {room.players.map((p) => (
                     <li key={p.clientId}>
-                      {p.name} {p.ready ? "(ready)" : ""}
+                      {p.name} {p.isBot ? "(bot)" : ""} {p.ready ? "(ready)" : ""}
+                      {clientId === room.ownerClientId && room.gameState === "lobby" && p.isBot ? (
+                        <button
+                          style={{ marginLeft: 8 }}
+                          onClick={() => send({ type: "room.removeBot", clientId: p.clientId })}
+                          disabled={!connected}
+                        >
+                          remove
+                        </button>
+                      ) : null}
                     </li>
                   ))}
                 </ul>
@@ -469,6 +589,9 @@ export function App() {
         <hr style={{ width: "100%" }} />
 
         <h3 style={{ margin: 0 }}>Controls</h3>
+        <div style={{ fontSize: 12, opacity: 0.85 }}>
+          Room mode: <strong>{room?.game?.difficulty ?? "?"}</strong>
+        </div>
         <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           Mode
           <select
@@ -508,6 +631,193 @@ export function App() {
           Function
           <input value={functionString} onChange={(e) => setFunctionString(e.target.value)} disabled={!connected} />
         </label>
+
+        {room?.game?.difficulty === "practice" ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ fontSize: 12, opacity: 0.8 }}>Hints (practice mode)</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                onClick={() => {
+                  if (!room?.game || !clientId) return;
+                  const g = room.game;
+                  const me = g.players.find((p) => p.clientId === clientId);
+                  const mySoldier = me?.soldiers?.[me?.currentTurnSoldier ?? 0];
+                  if (!me || !mySoldier) return;
+
+                  setChat((prev) =>
+                    prev.concat({ from: "hint", text: "Requesting AI hint...", ts: Date.now() }),
+                  );
+                  if (debugGemini) {
+                    // eslint-disable-next-line no-console
+                    console.log("[LLM] hint.request sent");
+                  }
+
+                  let target: { x: number; y: number } | null = null;
+                  let best = Number.POSITIVE_INFINITY;
+                  for (const p of g.players) {
+                    if (p.team === me.team) continue;
+                    for (const s of p.soldiers) {
+                      if (!s.alive) continue;
+                      const d = distSq({ x: mySoldier.x, y: mySoldier.y }, { x: s.x, y: s.y });
+                      if (d < best) {
+                        best = d;
+                        target = { x: s.x, y: s.y };
+                      }
+                    }
+                  }
+                  if (!target) return;
+
+                  const inverted = me.team === 2;
+                  const dxLocalPixels = inverted ? mySoldier.x - target.x : target.x - mySoldier.x;
+                  const dyLocalGameSign = -(target.y - mySoldier.y);
+
+                  const slope = dxLocalPixels !== 0 ? dyLocalGameSign / dxLocalPixels : 0;
+                  const m = Math.round(clamp(slope, -6, 6) * 10) / 10;
+
+                  setFunctionString(`${m}*x`);
+                  setChat((prev) =>
+                    prev.concat({
+                      from: "hint",
+                      text: `Manual hint (degree 1): use ${m}*x as a starting slope.`,
+                      ts: Date.now(),
+                    }),
+                  );
+                }}
+                disabled={!connected || (inGame && !isMyTurn)}
+              >
+                Degree 1
+              </button>
+
+              <button
+                onClick={() => {
+                  if (!room?.game || !clientId) return;
+                  const g = room.game;
+                  const me = g.players.find((p) => p.clientId === clientId);
+                  const mySoldier = me?.soldiers?.[me?.currentTurnSoldier ?? 0];
+                  if (!me || !mySoldier) return;
+
+                  let target: { x: number; y: number } | null = null;
+                  let best = Number.POSITIVE_INFINITY;
+                  for (const p of g.players) {
+                    if (p.team === me.team) continue;
+                    for (const s of p.soldiers) {
+                      if (!s.alive) continue;
+                      const d = distSq({ x: mySoldier.x, y: mySoldier.y }, { x: s.x, y: s.y });
+                      if (d < best) {
+                        best = d;
+                        target = { x: s.x, y: s.y };
+                      }
+                    }
+                  }
+                  if (!target) return;
+
+                  const inverted = me.team === 2;
+                  const dxLocalPixels = inverted ? mySoldier.x - target.x : target.x - mySoldier.x;
+                  const dyLocalGameSign = -(target.y - mySoldier.y);
+
+                  const slope = dxLocalPixels !== 0 ? dyLocalGameSign / dxLocalPixels : 0;
+                  const m = Math.round(clamp(slope, -6, 6) * 10) / 10;
+                  const a = dyLocalGameSign >= 0 ? 0.02 : -0.02;
+
+                  setFunctionString(`${a}*x^2 + ${m}*x`);
+                  setChat((prev) =>
+                    prev.concat({
+                      from: "hint",
+                      text: `Manual hint (degree 2): try ${a}*x^2 + ${m}*x (adds curvature).`,
+                      ts: Date.now(),
+                    }),
+                  );
+                }}
+                disabled={!connected || (inGame && !isMyTurn)}
+              >
+                Degree 2
+              </button>
+
+              <button
+                onClick={() => {
+                  if (!room?.game || !clientId) return;
+                  const g = room.game;
+                  const me = g.players.find((p) => p.clientId === clientId);
+                  const mySoldier = me?.soldiers?.[me?.currentTurnSoldier ?? 0];
+                  if (!me || !mySoldier) return;
+
+                  let target: { x: number; y: number } | null = null;
+                  let best = Number.POSITIVE_INFINITY;
+                  for (const p of g.players) {
+                    if (p.team === me.team) continue;
+                    for (const s of p.soldiers) {
+                      if (!s.alive) continue;
+                      const d = distSq({ x: mySoldier.x, y: mySoldier.y }, { x: s.x, y: s.y });
+                      if (d < best) {
+                        best = d;
+                        target = { x: s.x, y: s.y };
+                      }
+                    }
+                  }
+                  if (!target) return;
+
+                  const inverted = me.team === 2;
+                  const dxLocalPixels = inverted ? mySoldier.x - target.x : target.x - mySoldier.x;
+                  const dyLocalGameSign = -(target.y - mySoldier.y);
+
+                  const slope = dxLocalPixels !== 0 ? dyLocalGameSign / dxLocalPixels : 0;
+                  const m = Math.round(clamp(slope, -6, 6) * 10) / 10;
+                  const a2 = dyLocalGameSign >= 0 ? 0.01 : -0.01;
+                  const a4 = dyLocalGameSign >= 0 ? 0.0002 : -0.0002;
+
+                  setFunctionString(`${a4}*x^4 + ${a2}*x^2 + ${m}*x`);
+                  setChat((prev) =>
+                    prev.concat({
+                      from: "hint",
+                      text: `Manual hint (degree 4): try ${a4}*x^4 + ${a2}*x^2 + ${m}*x (stronger curvature).`,
+                      ts: Date.now(),
+                    }),
+                  );
+                }}
+                disabled={!connected || (inGame && !isMyTurn)}
+              >
+                Degree 4
+              </button>
+
+              <button
+                onClick={() => {
+                  if (!room?.game || !clientId) return;
+                  const g = room.game;
+                  const me = g.players.find((p) => p.clientId === clientId);
+                  const mySoldier = me?.soldiers?.[me?.currentTurnSoldier ?? 0];
+                  if (!me || !mySoldier) return;
+
+                  // Pick nearest enemy alive soldier as target.
+                  let target: { x: number; y: number } | null = null;
+                  let best = Number.POSITIVE_INFINITY;
+                  for (const p of g.players) {
+                    if (p.team === me.team) continue;
+                    for (const s of p.soldiers) {
+                      if (!s.alive) continue;
+                      const d = distSq({ x: mySoldier.x, y: mySoldier.y }, { x: s.x, y: s.y });
+                      if (d < best) {
+                        best = d;
+                        target = { x: s.x, y: s.y };
+                      }
+                    }
+                  }
+                  if (!target) return;
+
+                  send({
+                    type: "hint.request",
+                    payload: { shooter: { x: mySoldier.x, y: mySoldier.y }, target, debug: debugGemini },
+                  });
+                }}
+                disabled={!connected || (inGame && !isMyTurn)}
+              >
+                Ask bot (Gemini)
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ fontSize: 12, opacity: 0.75 }}>Hard mode: hints disabled.</div>
+        )}
+
         <button onClick={() => send({ type: "game.fire", functionString })} disabled={!connected || (inGame && !isMyTurn)}>
           Fire
         </button>

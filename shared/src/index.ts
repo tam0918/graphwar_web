@@ -3,17 +3,52 @@ export type RoomSummary = {
   name: string;
   numPlayers: number;
   gameState: "lobby" | "in_game";
+  preset: MatchPreset;
+  difficulty: DifficultyMode;
+  maxPlayers: number;
 };
+
+export type MatchPreset = "1vX" | "2v2" | "4v4";
+export type DifficultyMode = "hard" | "practice";
+
+export type RoomConfig = {
+  preset: MatchPreset;
+  difficulty: DifficultyMode;
+  maxPlayers: number;
+};
+
+export type HintRequestPayload = {
+  shooter: { x: number; y: number };
+  target: { x: number; y: number };
+  debug?: boolean;
+};
+
+export type HintLlmDebugEvent =
+  | {
+      type: "request";
+      attempt: number;
+      url: string;
+      method: string;
+      headers: Record<string, string>;
+      body: string;
+    }
+  | { type: "response"; attempt: number; status: number; rawBody: string }
+  | { type: "attempt"; attempt: number; prompt: string; text: string }
+  | { type: "parsed"; attempt: number; hint: { functionString: string; explanation?: string } }
+  | { type: "error"; message: string };
 
 export type PlayerState = {
   clientId: string;
   name: string;
   ready: boolean;
+  isBot?: boolean;
 };
 
 export type RoomState = {
   id: string;
   name: string;
+  ownerClientId: string;
+  config: RoomConfig;
   players: PlayerState[];
   gameState: "lobby" | "in_game";
   lastGameOver?: LastGameOver;
@@ -48,6 +83,7 @@ export type ExplosionHole = { x: number; y: number; r: number };
 
 export type GameState = {
   mode: import("./gameConstants").GameMode;
+  difficulty: DifficultyMode;
   terrain: { circles: TerrainCircle[]; holes: ExplosionHole[] };
   currentTurnClientId: string;
   timeTurnStarted: number;
@@ -68,7 +104,11 @@ export type GameState = {
 export type ClientToServerMessage =
   | { type: "hello"; name: string }
   | { type: "lobby.listRooms" }
-  | { type: "room.create"; name: string }
+  | {
+      type: "room.create";
+      name: string;
+      config?: Partial<Pick<RoomConfig, "preset" | "difficulty">>;
+    }
   | { type: "room.join"; roomId: string }
   | { type: "room.leave" }
   | { type: "chat.send"; text: string }
@@ -76,6 +116,11 @@ export type ClientToServerMessage =
   | { type: "game.start" }
   | { type: "game.surrender" }
   | { type: "game.setMode"; mode: import("./gameConstants").GameMode }
+  | { type: "game.setDifficulty"; difficulty: DifficultyMode }
+  | { type: "room.setConfig"; config: Partial<Pick<RoomConfig, "preset" | "difficulty">> }
+  | { type: "room.addBot"; name?: string }
+  | { type: "room.removeBot"; clientId: string }
+  | { type: "hint.request"; payload?: HintRequestPayload }
   | { type: "game.setAngle"; angle: number }
   | { type: "game.fire"; functionString: string };
 
@@ -84,9 +129,10 @@ export type ServerToClientMessage =
   | { type: "error"; message: string }
   | { type: "lobby.state"; rooms: RoomSummary[] }
   | { type: "room.state"; room: RoomState | null }
-  | { type: "chat.msg"; roomId: string; from: string; text: string; ts: number };
+  | { type: "chat.msg"; roomId: string; from: string; text: string; ts: number }
+  | { type: "hint.response"; functionString: string; explanation?: string; debug?: { events: HintLlmDebugEvent[] } };
 
-export const PROTOCOL_VERSION = 1 as const;
+export const PROTOCOL_VERSION = 6 as const;
 
 export * from "./gameConstants";
 export * from "./game/physics";
