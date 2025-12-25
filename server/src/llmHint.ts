@@ -6,6 +6,8 @@ export type LlmHintArgs = {
   shooterTeam: 1 | 2;
   shooter: { x: number; y: number };
   target: { x: number; y: number };
+  enemies?: Array<{ x: number; y: number }>;
+  objective?: "single" | "multi";
   obstacles: {
     circles: Array<{ x: number; y: number; r: number }>;
     holes: Array<{ x: number; y: number; r: number }>;
@@ -198,6 +200,12 @@ export async function generateLlmHint(
   const targetGame = toGameCoordsFromPixels(args.target, inverted);
   const targetLocalGame = { x: targetGame.x - shooterGame.x, y: targetGame.y - shooterGame.y };
 
+  const enemiesLocal = (args.enemies ?? []).map((e) => {
+    const eg = toGameCoordsFromPixels({ x: e.x, y: e.y }, inverted);
+    const local = { x: eg.x - shooterGame.x, y: eg.y - shooterGame.y };
+    return { x: Number(local.x.toFixed(4)), y: Number(local.y.toFixed(4)) };
+  });
+
   const circlesAllLocal = args.obstacles.circles.map((c) => {
     const cg = toGameCoordsFromPixels({ x: c.x, y: c.y }, inverted);
     const local = { x: cg.x - shooterGame.x, y: cg.y - shooterGame.y };
@@ -222,8 +230,14 @@ export async function generateLlmHint(
     return { x: Number(local.x.toFixed(4)), y: Number(local.y.toFixed(4)), r: Number(r.toFixed(4)) };
   });
 
+  const objectiveLine =
+    args.objective === "multi"
+      ? `Objective: Prefer a trajectory that hits MULTIPLE enemy soldiers (2+ if possible) in a single shot, while still avoiding all circles.\n`
+      : `Objective: Hit the target while avoiding all circles.\n`;
+
   const basePrompt =
     `Task: Suggest ONE functionString the player can type to shoot AND avoid terrain circles.\n` +
+    objectiveLine +
     `Return ONLY JSON.\n` +
     `IMPORTANT: The FIRST character of your reply must be '{'.\n` +
     `\n` +
@@ -235,6 +249,9 @@ export async function generateLlmHint(
     `LocalGame:\n` +
     `dx=${targetLocalGame.x.toFixed(4)}\n` +
     `dy=${targetLocalGame.y.toFixed(4)} (positive up)\n` +
+    (args.objective === "multi" && enemiesLocal.length
+      ? `\nEnemySoldiersLocalGame (try to hit 2+ along one path):\n${JSON.stringify({ enemies: enemiesLocal })}\n`
+      : ``) +
     `\n` +
     `ObstaclesLocalGame: solid circles MUST be avoided.\n` +
     `Full obstacle list (x,y,r in LOCAL GAME units):\n` +

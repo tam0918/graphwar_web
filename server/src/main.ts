@@ -49,6 +49,8 @@ type Room = {
     players: PlayerGameState[];
     currentTurnIndex: number;
     timeTurnStarted: number;
+    hintPauseStartedAtMs?: number;
+    hintPauseByClientId?: string;
     phase: "playing" | "animating_shot";
     lastShot?: {
       byClientId: string;
@@ -735,6 +737,14 @@ function fireShot(room: Room, byClientId: string, functionStringRaw: string): st
 
   const startedAtMs = now();
   const functionVelocity = GAME_CONSTANTS.FUNCTION_VELOCITY;
+
+  // Friendly fire: teammates can be hit but do not die. Filter hits to enemy-only.
+  const shooterTeam = turnPlayer.team;
+  const enemyHits = shot.hits.filter((h) => {
+    const targetPlayer = g.players.find((p) => p.clientId === h.targetClientId);
+    return !!targetPlayer && targetPlayer.team !== shooterTeam;
+  });
+
   g.phase = "animating_shot";
   g.lastShot = {
     byClientId,
@@ -743,11 +753,11 @@ function fireShot(room: Room, byClientId: string, functionStringRaw: string): st
     startedAtMs,
     functionVelocity,
     explosion: shot.explosion,
-    hits: shot.hits,
+    hits: enemyHits,
     path: shot.path,
   };
 
-  for (const h of shot.hits) {
+  for (const h of enemyHits) {
     const killAt = startedAtMs + Math.floor((h.killStep * 1000) / functionVelocity);
     schedule(room, killAt - now(), () => {
       const gg = room.game;
@@ -1090,6 +1100,16 @@ function handleMessage(ws: WebSocket, msg: ClientToServerMessage) {
       }
 
       void (async () => {
+        // Pause the turn timer while the server waits for the LLM so the player doesn't lose their turn.
+        const pauseTurn = (() => {
+          const gg = room.game;
+          if (!gg) return { active: false } as const;
+          if (gg.hintPauseStartedAtMs != null) return { active: false } as const;
+          gg.hintPauseStartedAtMs = now();
+          gg.hintPauseByClientId = client.clientId;
+          return { active: true, startedAt: gg.hintPauseStartedAtMs } as const;
+        })();
+
         try {
           const shooterSoldier = turnPlayer.soldiers[turnPlayer.currentTurnSoldier];
           if (!shooterSoldier) throw new Error("No shooter soldier");
@@ -1181,6 +1201,18 @@ function handleMessage(ws: WebSocket, msg: ClientToServerMessage) {
           const dxLocalGame = targetGame.x - shooterGame.x;
           const dyLocalGame = targetGame.y - shooterGame.y;
 
+          const aliveEnemySoldiers = g.players.flatMap((p) =>
+            p.team !== turnPlayer.team ? p.soldiers.filter((s) => s.alive) : [],
+          );
+          const enemySoldiersAliveCount = aliveEnemySoldiers.length;
+          const enemies = aliveEnemySoldiers.map((s) => ({ x: s.x, y: s.y })).slice(0, 24);
+
+          const aliveTeams = Array.from(
+            new Set(g.players.filter((p) => p.soldiers.some((s) => s.alive)).map((p) => p.team)),
+          );
+          const isTwoTeamMatch = aliveTeams.length === 2;
+          const wantsMultiHit = isTwoTeamMatch && enemySoldiersAliveCount >= 2;
+
           const materializeTemplateFunction = (fnRaw: string) => {
             let fn = String(fnRaw || "");
 
@@ -1264,12 +1296,27 @@ function handleMessage(ws: WebSocket, msg: ClientToServerMessage) {
                 : true;
 
             const nearTargetOk = bestD2 <= (r * 1.25) * (r * 1.25);
+
+            // Count unique ENEMY soldier hits (friendly fire doesn't kill).
+            const shooterTeam = turnPlayer.team;
+            const enemyHitCount = (() => {
+              const seen = new Set<string>();
+              for (const h of shot.hits) {
+                const tp = g.players.find((p) => p.clientId === h.targetClientId);
+                if (!tp || tp.team === shooterTeam) continue;
+                seen.add(`${h.targetClientId}:${h.soldierIndex}`);
+              }
+              return seen.size;
+            })();
+
+            const multiHitOk = !wantsMultiHit ? true : enemyHitCount >= 2;
             return {
-              ok: !pathCollidesTerrain && nearTargetOk && progressOk,
+              ok: !pathCollidesTerrain && progressOk && (wantsMultiHit ? multiHitOk : nearTargetOk),
               shot,
               lastLocalX: bestLocalX,
               collided: pathCollidesTerrain,
               bestD2,
+              enemyHitCount,
             };
           };
 
@@ -1319,6 +1366,8 @@ function handleMessage(ws: WebSocket, msg: ClientToServerMessage) {
               shooterTeam: turnPlayer.team,
               shooter: { x: shooterSoldier.x, y: shooterSoldier.y },
               target: { x: target.x, y: target.y },
+              enemies,
+              objective: wantsMultiHit ? ("multi" as const) : ("single" as const),
               obstacles: pickRelevantObstacles({
                 shooter: { x: shooterSoldier.x, y: shooterSoldier.y },
                 target: { x: target.x, y: target.y },
@@ -1341,11 +1390,13 @@ function handleMessage(ws: WebSocket, msg: ClientToServerMessage) {
                   functionString: string;
                   explanation?: string;
                   bestD2: number;
+                  enemyHitCount: number;
                 }
               | null = null;
 
             let nextFeedback: string | undefined;
             for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+              send(ws, { type: "hint.progress", attempt, maxAttempts, status: "thinking" });
               const hint = await generateLlmHint(
                 {
                   ...llmArgs,
@@ -1361,17 +1412,24 @@ function handleMessage(ws: WebSocket, msg: ClientToServerMessage) {
                 const evalRes = isShotGoodEnough(fn);
                 const minDistPx = Math.sqrt(evalRes.bestD2);
 
+                // Track best candidate by multi-hit first, then distance.
                 if (!evalRes.collided && Number.isFinite(evalRes.bestD2)) {
-                  if (!bestCandidate || evalRes.bestD2 < bestCandidate.bestD2) {
+                  if (
+                    !bestCandidate ||
+                    evalRes.enemyHitCount > bestCandidate.enemyHitCount ||
+                    (evalRes.enemyHitCount === bestCandidate.enemyHitCount && evalRes.bestD2 < bestCandidate.bestD2)
+                  ) {
                     bestCandidate = {
                       functionString: fn,
                       explanation: hint.explanation,
                       bestD2: evalRes.bestD2,
+                      enemyHitCount: evalRes.enemyHitCount,
                     };
                   }
                 }
 
                 if (evalRes.ok) {
+                  send(ws, { type: "hint.progress", attempt, maxAttempts, status: "done" });
                   send(ws, {
                     type: "hint.response",
                     functionString: fn,
@@ -1390,6 +1448,7 @@ function handleMessage(ws: WebSocket, msg: ClientToServerMessage) {
                 nextFeedback =
                   `Attempt ${attempt}/${maxAttempts} was rejected by the game engine simulation. ` +
                   (evalRes.collided ? `It collided with terrain/bounds (including between steps). ` : `It did not collide, but missed the target. `) +
+                  (wantsMultiHit ? `Enemy hits achieved: ${evalRes.enemyHitCount}. Try to hit 2+ enemies if possible. ` : ``) +
                   `Closest distance to target was ~${minDistPx.toFixed(1)}px. ` +
                   `It stopped at LocalGame approx (x=${evalRes.lastLocalX.toFixed(3)}, y=${lastLocalY.toFixed(3)}), ` +
                   `but needs to reach (dx=${dxLocalGame.toFixed(3)}, dy=${dyLocalGame.toFixed(3)}). ` +
@@ -1412,6 +1471,7 @@ function handleMessage(ws: WebSocket, msg: ClientToServerMessage) {
             // If no perfect shot found, prefer a deterministic local parabola search.
             const auto = tryAutoParabolaSearch();
             if (auto) {
+              send(ws, { type: "hint.progress", attempt: maxAttempts, maxAttempts, status: "done" });
               send(ws, {
                 type: "hint.response",
                 functionString: auto.fn,
@@ -1424,12 +1484,13 @@ function handleMessage(ws: WebSocket, msg: ClientToServerMessage) {
 
             // Otherwise, if we have a non-colliding best candidate, return it even if it slightly misses.
             if (bestCandidate) {
+              send(ws, { type: "hint.progress", attempt: maxAttempts, maxAttempts, status: "done" });
               send(ws, {
                 type: "hint.response",
                 functionString: bestCandidate.functionString,
                 explanation:
                   bestCandidate.explanation ??
-                  `Best non-colliding AI hint found after ${maxAttempts} attempts (may still miss slightly; validated no terrain collision).`,
+                  `Best non-colliding AI hint found after ${maxAttempts} attempts (multi-hit=${bestCandidate.enemyHitCount}; may still miss slightly; validated no terrain collision).`,
                 debug: debugRequested ? { events: debugEvents as any } : undefined,
               });
               return;
@@ -1472,6 +1533,7 @@ function handleMessage(ws: WebSocket, msg: ClientToServerMessage) {
 
             // Keep the full error server-side for debugging.
             console.warn("AI hint failed:", rawReason);
+            send(ws, { type: "hint.progress", attempt: 0, maxAttempts: 0, status: "error" });
             send(ws, {
               type: "hint.response",
               functionString: fallbackFn,
@@ -1492,6 +1554,17 @@ function handleMessage(ws: WebSocket, msg: ClientToServerMessage) {
           }
         } catch (e) {
           send(ws, { type: "error", message: e instanceof Error ? e.message : "Hint failed" });
+        } finally {
+          // Resume turn timer and give back the paused duration.
+          if (pauseTurn.active && room.game && room.game.hintPauseStartedAtMs != null) {
+            const gg = room.game;
+            const pausedFor = now() - (gg.hintPauseStartedAtMs ?? now());
+            gg.timeTurnStarted += pausedFor;
+            gg.hintPauseStartedAtMs = undefined;
+            gg.hintPauseByClientId = undefined;
+            broadcast(room, { type: "room.state", room: getRoomState(room) });
+            broadcastLobbyState();
+          }
         }
       })();
       return;
@@ -1525,6 +1598,7 @@ setInterval(() => {
   const TURN_TIME_MS = GAME_CONSTANTS.TURN_TIME_MS;
   for (const room of roomsById.values()) {
     if (room.gameState !== "in_game" || !room.game) continue;
+    if (room.game.hintPauseStartedAtMs != null) continue;
     if (now() - room.game.timeTurnStarted > TURN_TIME_MS) {
       advanceTurn(room);
       broadcast(room, { type: "room.state", room: getRoomState(room) });

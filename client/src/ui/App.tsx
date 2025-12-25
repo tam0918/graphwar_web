@@ -71,6 +71,12 @@ export function App() {
 
   const [previewShot, setPreviewShot] = useState<ShotResult | null>(null);
 
+  const [hintThinking, setHintThinking] = useState<{
+    attempt: number;
+    maxAttempts: number;
+    frozenTurnSecondsLeft: number | null;
+  } | null>(null);
+
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   const [isFullscreen, setIsFullscreen] = useState(() => !!document.fullscreenElement);
@@ -86,12 +92,25 @@ export function App() {
     return () => clearInterval(t);
   }, []);
 
-  const turnSecondsLeft = useMemo(() => {
+  const turnSecondsLeftLive = useMemo(() => {
     if (!inGame || !room?.game) return null;
     const elapsed = nowMs - room.game.timeTurnStarted;
     const left = Math.ceil((GAME_CONSTANTS.TURN_TIME_MS - elapsed) / 1000);
     return Math.max(0, left);
   }, [inGame, room, nowMs]);
+
+  useEffect(() => {
+    if (!hintThinking) return;
+    if (hintThinking.frozenTurnSecondsLeft != null) return;
+    if (!isMyTurn) return;
+    if (turnSecondsLeftLive == null) return;
+    setHintThinking((prev) => (prev ? { ...prev, frozenTurnSecondsLeft: turnSecondsLeftLive } : prev));
+  }, [hintThinking, isMyTurn, turnSecondsLeftLive]);
+
+  const turnSecondsLeft = useMemo(() => {
+    if (!hintThinking || !isMyTurn) return turnSecondsLeftLive;
+    return hintThinking.frozenTurnSecondsLeft ?? turnSecondsLeftLive;
+  }, [hintThinking, isMyTurn, turnSecondsLeftLive]);
 
   const ready = useMemo(() => {
     if (!room) return false;
@@ -167,6 +186,7 @@ export function App() {
       } else if (msg.type === "hint.response") {
         // eslint-disable-next-line no-console
         console.log("[WS recv] hint.response", msg);
+        setHintThinking(null);
         setFunctionString(msg.functionString);
         if (debugGemini && msg.debug?.events) {
           // eslint-disable-next-line no-console
@@ -176,6 +196,16 @@ export function App() {
         }
         if (msg.explanation) {
           setChat((prev) => prev.concat({ from: "hint", text: msg.explanation!, ts: Date.now() }));
+        }
+      } else if (msg.type === "hint.progress") {
+        if (msg.status === "thinking") {
+          setHintThinking((prev) => ({
+            attempt: msg.attempt,
+            maxAttempts: msg.maxAttempts,
+            frozenTurnSecondsLeft: prev?.frozenTurnSecondsLeft ?? null,
+          }));
+        } else {
+          setHintThinking(null);
         }
       } else if (msg.type === "error") {
         setChat((prev) => prev.concat({ from: "server", text: msg.message, ts: Date.now() }));
@@ -813,6 +843,12 @@ export function App() {
                 Ask bot (Gemini)
               </button>
             </div>
+
+            {hintThinking ? (
+              <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>
+                AI thinking: {hintThinking.attempt}/{hintThinking.maxAttempts}
+              </div>
+            ) : null}
           </div>
         ) : (
           <div style={{ fontSize: 12, opacity: 0.75 }}>Hard mode: hints disabled.</div>

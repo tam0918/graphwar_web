@@ -130,9 +130,10 @@ export type ServerToClientMessage =
   | { type: "lobby.state"; rooms: RoomSummary[] }
   | { type: "room.state"; room: RoomState | null }
   | { type: "chat.msg"; roomId: string; from: string; text: string; ts: number }
+  | { type: "hint.progress"; attempt: number; maxAttempts: number; status: "thinking" | "done" | "error" }
   | { type: "hint.response"; functionString: string; explanation?: string; debug?: { events: HintLlmDebugEvent[] } };
 
-export const PROTOCOL_VERSION = 6 as const;
+export const PROTOCOL_VERSION = 7 as const;
 
 export * from "./gameConstants";
 export * from "./game/physics";
