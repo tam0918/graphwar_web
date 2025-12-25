@@ -1,0 +1,800 @@
+\documentclass[a4paper,12pt]{report}
+\usepackage[T5]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[vietnam]{babel}
+\usepackage{graphicx}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{longtable}
+\usepackage{xltabular}
+\usepackage{listings}
+\usepackage{xcolor}
+
+% --- CẤU HÌNH TRANG IN ---
+\geometry{
+ a4paper,
+ left=30mm,
+ right=20mm,
+ top=20mm,
+ bottom=25mm,
+}
+
+% --- GIÃN DÒNG CHUẨN BÁO CÁO (1.3) ---
+\renewcommand{\baselinestretch}{1.3}
+
+% --- CẤU HÌNH ĐỔI TÊN ---
+\renewcommand{\chaptername}{CHƯƠNG}
+\renewcommand{\contentsname}{MỤC LỤC}
+\renewcommand{\listfigurename}{DANH MỤC HÌNH ẢNH}
+
+% --- SỬA LẠI FORMAT CHƯƠNG ---
+\titleformat{\chapter}[hang]
+  {\normalfont\bfseries\Large}
+  {\chaptertitlename\ \thechapter:}
+  {1ex}
+  {\MakeUppercase}
+
+\titlespacing*{\chapter}{0pt}{-10pt}{20pt}
+
+\titleformat{name=\chapter,numberless}[block]
+  {\normalfont\bfseries\Large\centering}
+  {}
+  {0pt}
+  {\MakeUppercase}
+
+% --- CẤU HÌNH TABLE ---
+\renewcommand{\arraystretch}{1.3}
+
+% --- CẤU HÌNH CODE LISTING ---
+\lstdefinestyle{codestyle}{
+    backgroundcolor=\color{gray!10},
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    keywordstyle=\color{blue},
+    commentstyle=\color{green!60!black},
+    stringstyle=\color{orange},
+}
+\lstset{style=codestyle}
+
+\begin{document}
+
+% ==================================================================
+% TRANG BÌA
+% ==================================================================
+\begin{titlepage}
+    \begin{center}
+        \textbf{\large ĐẠI HỌC QUỐC GIA HÀ NỘI}\\
+        \textbf{\large TRƯỜNG ĐẠI HỌC KHOA HỌC TỰ NHIÊN}\\
+        \textbf{\large KHOA VẬT LÝ}\\
+        \vspace{0.5cm}
+        \hrule
+        \vspace{2cm}
+        % LOGO TRƯỜNG
+        \includegraphics[width=5cm]{logo_hus.png} \\ 
+        \vspace{1.5cm}
+
+        \textbf{\Huge BÁO CÁO TIỂU LUẬN}\\
+        \vspace{0.5cm}
+        \textbf{\Large Môn học: Phát triển ứng dụng Web}\\
+        \vspace{0.5cm}
+        \textbf{\LARGE GRAPHWAR WEB}\\
+        \textbf{\large Trò chơi đối kháng chiến thuật dựa trên hàm số toán học}\\
+        \vspace{2cm}
+
+        \begin{tabular}{l l}
+            \textbf{Nhóm thực hiện:} & \\
+            \quad 1. Lường Văn Tâm & (MSSV: 2200xxxx) \\
+            \quad 2. Khương Thanh Tín & (MSSV: 2200xxxx) \\
+            \quad 3. Cao Thanh Phương & (MSSV: 2200xxxx) \\
+            & \\
+            \textbf{Lớp:} & K67 Kỹ thuật điện tử và Tin học \\
+            \textbf{Giảng viên hướng dẫn:} & (Điền tên giảng viên) \\
+        \end{tabular}
+
+        \vfill
+        \textbf{Hà Nội -- 2025}
+    \end{center}
+\end{titlepage}
+
+% ==================================================================
+% LỜI CẢM ƠN
+% ==================================================================
+\chapter*{LỜI CẢM ƠN}
+\addcontentsline{toc}{chapter}{LỜI CẢM ƠN}
+
+Trước hết, nhóm chúng em xin gửi lời cảm ơn chân thành đến quý Thầy/Cô trong Khoa Vật lý, Trường Đại học Khoa học Tự nhiên -- ĐHQGHN, đã tận tình giảng dạy và tạo điều kiện để chúng em được tiếp cận với các công nghệ phát triển ứng dụng Web hiện đại.
+
+Đặc biệt, chúng em xin cảm ơn giảng viên hướng dẫn môn học đã định hướng và góp ý trong suốt quá trình thực hiện đồ án. Những phản hồi quý báu đã giúp nhóm hoàn thiện hơn cả về mặt kỹ thuật lẫn tư duy thiết kế hệ thống.
+
+Dự án Graphwar Web không chỉ là một bài tập lập trình đơn thuần, mà còn là cơ hội để chúng em chiêm nghiệm về sự giao thoa giữa Toán học và Công nghệ --- nơi mà mỗi hàm số không chỉ là một biểu thức trừu tượng, mà còn là một ``viên đạn'' mang tính chiến thuật trong không gian trò chơi.
+
+Cuối cùng, chúng em xin gửi lời chúc sức khỏe và thành công đến quý Thầy/Cô và các bạn sinh viên.
+
+\begin{flushright}
+    \textit{Nhóm tác giả}
+\end{flushright}
+
+% ==================================================================
+% MỤC LỤC & DANH MỤC
+% ==================================================================
+\tableofcontents
+\newpage
+
+\renewcommand{\listtablename}{DANH MỤC BẢNG BIỂU}
+\listoftables
+\addcontentsline{toc}{chapter}{DANH MỤC BẢNG BIỂU}
+\newpage
+
+\listoffigures
+\addcontentsline{toc}{chapter}{DANH MỤC HÌNH ẢNH}
+\newpage
+
+\chapter*{DANH MỤC TỪ VIẾT TẮT}
+\addcontentsline{toc}{chapter}{DANH MỤC TỪ VIẾT TẮT}
+\begin{center}
+    \begin{tabular}{|c|l|}
+        \hline
+        \textbf{Từ viết tắt} & \textbf{Nghĩa đầy đủ} \\
+        \hline
+        API & Application Programming Interface \\
+        \hline
+        CSDL & Cơ sở dữ liệu (Database) \\
+        \hline
+        CSS & Cascading Style Sheets \\
+        \hline
+        DOM & Document Object Model \\
+        \hline
+        HTML & HyperText Markup Language \\
+        \hline
+        HTTP & HyperText Transfer Protocol \\
+        \hline
+        JSON & JavaScript Object Notation \\
+        \hline
+        LLM & Large Language Model (Mô hình ngôn ngữ lớn) \\
+        \hline
+        ORM & Object-Relational Mapping \\
+        \hline
+        REST & Representational State Transfer \\
+        \hline
+        SQL & Structured Query Language \\
+        \hline
+        SPA & Single Page Application \\
+        \hline
+        UI/UX & User Interface / User Experience \\
+        \hline
+        WebSocket & Giao thức truyền thông hai chiều thời gian thực \\
+        \hline
+    \end{tabular}
+\end{center}
+\newpage
+
+% ==================================================================
+% PHẦN MỞ ĐẦU
+% ==================================================================
+\chapter*{MỞ ĐẦU}
+\addcontentsline{toc}{chapter}{MỞ ĐẦU}
+\setcounter{section}{0}
+
+\section{Lý do chọn đề tài}
+Trong kỷ nguyên số hóa, ranh giới giữa giáo dục và giải trí ngày càng trở nên mờ nhạt. Các trò chơi điện tử không còn đơn thuần là phương tiện tiêu khiển mà đã trở thành công cụ mạnh mẽ để truyền tải kiến thức --- một xu hướng được gọi là \textit{Gamification} (trò chơi hóa). Graphwar, với ý tưởng ban đầu được phát triển bởi cộng đồng mã nguồn mở, là một minh chứng điển hình cho sự giao thoa giữa Toán học và Chiến thuật: người chơi ``bắn'' đối thủ bằng cách nhập các hàm số toán học, và quỹ đạo của ``viên đạn'' chính là đồ thị của hàm số đó.
+
+Đối với nhóm sinh viên chuyên ngành Khoa học tính toán và Trí tuệ nhân tạo, việc tái hiện Graphwar trên nền tảng Web hiện đại không chỉ là một bài tập về lập trình, mà còn là cơ hội để chiêm nghiệm sâu hơn về:
+\begin{itemize}
+    \item Bản chất của các hàm số và cách chúng được biểu diễn trong không gian hai chiều.
+    \item Kiến trúc ứng dụng Web thời gian thực với mô hình Client-Server và giao thức WebSocket.
+    \item Thiết kế cơ sở dữ liệu quan hệ để lưu trữ và truy vấn dữ liệu người chơi.
+    \item Tích hợp Trí tuệ nhân tạo (AI) để tạo ra các gợi ý chiến thuật thông minh.
+\end{itemize}
+
+\section{Mục tiêu đề tài}
+Mục tiêu của đồ án là xây dựng một ứng dụng Web hoàn chỉnh cho trò chơi Graphwar với các yêu cầu:
+\begin{enumerate}
+    \item \textbf{Gameplay cốt lõi:} Cho phép nhiều người chơi tham gia các trận đấu đối kháng theo lượt, sử dụng hàm số toán học để tấn công đối thủ.
+    \item \textbf{Giao tiếp thời gian thực:} Sử dụng WebSocket để đồng bộ trạng thái trò chơi giữa các client một cách tức thì.
+    \item \textbf{Hệ thống cơ sở dữ liệu:} Tích hợp MariaDB để lưu trữ thống kê người chơi (số trận, số thắng, tỉ lệ thắng, số kills, danh hiệu).
+    \item \textbf{Tính năng AI Hint:} Tích hợp mô hình ngôn ngữ lớn (LLM) để gợi ý hàm số phù hợp cho người chơi mới.
+    \item \textbf{Giao diện thân thiện:} Thiết kế UI/UX trực quan, dễ sử dụng trên trình duyệt hiện đại.
+\end{enumerate}
+
+\section{Phạm vi và Phương pháp}
+Đồ án được thực hiện theo mô hình \textbf{Monorepo} với ba workspace:
+\begin{itemize}
+    \item \texttt{client/}: Ứng dụng React (TypeScript) chạy trên trình duyệt.
+    \item \texttt{server/}: Server Node.js (TypeScript) xử lý logic game và kết nối CSDL.
+    \item \texttt{shared/}: Thư viện dùng chung (types, hàm tiện ích, hằng số game).
+\end{itemize}
+
+Phương pháp tiếp cận dựa trên nguyên tắc \textit{Separation of Concerns} (phân tách trách nhiệm): mỗi thành phần trong hệ thống chỉ đảm nhận một nhiệm vụ cụ thể, giúp mã nguồn dễ bảo trì và mở rộng.
+
+% ==================================================================
+% CHƯƠNG 1: TỔNG QUAN
+% ==================================================================
+\chapter{TỔNG QUAN}
+
+\section{Giới thiệu về Graphwar}
+Graphwar là một trò chơi chiến thuật theo lượt, nơi người chơi sử dụng các hàm số toán học để ``bắn'' đối thủ. Ý tưởng ban đầu xuất phát từ cộng đồng mã nguồn mở, với phiên bản Java desktop được phát triển từ những năm 2000.
+
+\subsection{Luật chơi cơ bản}
+\begin{enumerate}
+    \item Mỗi người chơi điều khiển một hoặc nhiều ``lính'' (soldiers) được đặt ngẫu nhiên trên bản đồ.
+    \item Theo lượt, người chơi nhập một hàm số $y = f(x)$ để tấn công.
+    \item Đồ thị của hàm số được vẽ từ vị trí lính hiện tại.
+    \item Nếu đồ thị đi qua vị trí của lính đối phương, lính đó bị tiêu diệt.
+    \item Đội cuối cùng còn lính sống sót sẽ chiến thắng.
+\end{enumerate}
+
+\subsection{Ý nghĩa giáo dục}
+Graphwar biến việc học hàm số từ một chủ đề khô khan trong sách giáo khoa thành một trải nghiệm tương tác và cạnh tranh. Người chơi buộc phải:
+\begin{itemize}
+    \item Hiểu được hình dạng đồ thị của các hàm cơ bản: $\sin(x)$, $\cos(x)$, $\tan(x)$, $x^2$, $\sqrt{x}$, $\ln(x)$, v.v.
+    \item Biết cách biến đổi (shift, scale, reflect) để điều chỉnh quỹ đạo.
+    \item Tư duy chiến thuật: chọn hàm số tối ưu để vừa tiêu diệt địch, vừa tránh đồng đội.
+\end{itemize}
+
+\section{Công nghệ sử dụng}
+\begin{table}[H]
+    \centering
+    \caption{Bảng tổng hợp công nghệ sử dụng trong dự án}
+    \label{tab:tech_stack}
+    \begin{tabularx}{\textwidth}{|l|l|X|}
+        \hline
+        \textbf{Thành phần} & \textbf{Công nghệ} & \textbf{Mô tả} \\
+        \hline
+        Frontend & React 18 + TypeScript & Xây dựng giao diện SPA, quản lý state với React Hooks. \\
+        \hline
+        Backend & Node.js + TypeScript & Xử lý logic game, quản lý phòng chơi, kết nối CSDL. \\
+        \hline
+        Giao thức & WebSocket (ws) & Truyền thông hai chiều thời gian thực giữa client và server. \\
+        \hline
+        CSDL & MariaDB & Lưu trữ thống kê người chơi (stats, leaderboard). \\
+        \hline
+        Build tool & Vite & Bundler nhanh cho React với Hot Module Replacement. \\
+        \hline
+        AI Hint & FPT Cloud LLM API & Gợi ý hàm số cho người chơi dựa trên ngữ cảnh trận đấu. \\
+        \hline
+    \end{tabularx}
+\end{table}
+
+% ==================================================================
+% CHƯƠNG 2: KIẾN TRÚC HỆ THỐNG
+% ==================================================================
+\chapter{KIẾN TRÚC HỆ THỐNG}
+
+\section{Tổng quan kiến trúc}
+Hệ thống được thiết kế theo mô hình \textbf{Client-Server} với giao thức WebSocket làm trung tâm. Khác với mô hình HTTP truyền thống (request-response), WebSocket cho phép server chủ động đẩy (push) dữ liệu xuống client mà không cần client gửi request trước --- điều kiện tiên quyết cho các ứng dụng thời gian thực như game multiplayer.
+
+\subsection{Sơ đồ kiến trúc tổng quát}
+\begin{verbatim}
+    +-------------+       WebSocket        +-------------+
+    |   Client    | <------------------->  |   Server    |
+    |  (React)    |                        |  (Node.js)  |
+    +-------------+                        +------+------+
+                                                  |
+                                                  | SQL
+                                                  v
+                                           +-------------+
+                                           |  MariaDB    |
+                                           | (Stats DB)  |
+                                           +-------------+
+\end{verbatim}
+
+\section{Cấu trúc thư mục dự án}
+Dự án được tổ chức theo mô hình \textbf{Monorepo} sử dụng npm workspaces:
+
+\begin{lstlisting}[language=bash, caption={Cấu trúc thư mục Monorepo}]
+graphwar_web/
+|-- package.json          # Root workspace config
+|-- client/               # React frontend
+|   |-- src/
+|   |   |-- ui/App.tsx    # Main component
+|   |   |-- ui/GameCanvas.tsx
+|   |-- index.html
+|   |-- vite.config.ts
+|-- server/               # Node.js backend
+|   |-- src/
+|   |   |-- main.ts       # Entry point, WebSocket server
+|   |   |-- statsDb.ts    # MariaDB connection
+|   |   |-- llmHint.ts    # AI hint integration
+|   |-- sql/schema.sql    # Database schema
+|-- shared/               # Shared types & utils
+|   |-- src/
+|   |   |-- index.ts      # Protocol messages, types
+|   |   |-- function/     # Math expression parser
+|   |   |-- game/         # Physics, terrain generation
+\end{lstlisting}
+
+\section{Giao thức truyền thông (Protocol)}
+Giao tiếp giữa Client và Server được định nghĩa chặt chẽ thông qua các \textbf{Message Types} trong TypeScript, đảm bảo tính nhất quán và an toàn kiểu dữ liệu.
+
+\subsection{Client $\rightarrow$ Server Messages}
+\begin{table}[H]
+    \centering
+    \caption{Các loại message từ Client gửi lên Server}
+    \label{tab:client_messages}
+    \begin{tabularx}{\textwidth}{|l|X|}
+        \hline
+        \textbf{Message Type} & \textbf{Mô tả} \\
+        \hline
+        \texttt{hello} & Đăng ký tên người chơi khi kết nối. \\
+        \hline
+        \texttt{lobby.listRooms} & Yêu cầu danh sách các phòng đang mở. \\
+        \hline
+        \texttt{room.create} & Tạo phòng mới với cấu hình (preset, difficulty). \\
+        \hline
+        \texttt{room.join} & Tham gia vào một phòng. \\
+        \hline
+        \texttt{game.fire} & Gửi hàm số để thực hiện lượt bắn. \\
+        \hline
+        \texttt{hint.request} & Yêu cầu AI gợi ý hàm số. \\
+        \hline
+        \texttt{stats.get} & Yêu cầu thống kê cá nhân và bảng xếp hạng. \\
+        \hline
+    \end{tabularx}
+\end{table}
+
+\subsection{Server $\rightarrow$ Client Messages}
+\begin{table}[H]
+    \centering
+    \caption{Các loại message từ Server gửi xuống Client}
+    \label{tab:server_messages}
+    \begin{tabularx}{\textwidth}{|l|X|}
+        \hline
+        \textbf{Message Type} & \textbf{Mô tả} \\
+        \hline
+        \texttt{welcome} & Xác nhận kết nối, trả về clientId. \\
+        \hline
+        \texttt{lobby.state} & Danh sách các phòng hiện có. \\
+        \hline
+        \texttt{room.state} & Trạng thái đầy đủ của phòng và game. \\
+        \hline
+        \texttt{hint.response} & Hàm số được AI gợi ý. \\
+        \hline
+        \texttt{stats.me} & Thống kê cá nhân của người chơi. \\
+        \hline
+        \texttt{stats.leaderboard} & Top người chơi có nhiều chiến thắng nhất. \\
+        \hline
+    \end{tabularx}
+\end{table}
+
+% ==================================================================
+% CHƯƠNG 3: THIẾT KẾ CƠ SỞ DỮ LIỆU
+% ==================================================================
+\chapter{THIẾT KẾ CƠ SỞ DỮ LIỆU}
+
+\section{Lý do cần Cơ sở dữ liệu}
+Trong phiên bản cơ bản, toàn bộ trạng thái trò chơi (phòng, người chơi, trận đấu) được lưu trong bộ nhớ RAM của server. Điều này có nghĩa là khi server khởi động lại, mọi dữ liệu sẽ bị mất.
+
+Để xây dựng một hệ thống hoàn chỉnh với các tính năng:
+\begin{itemize}
+    \item \textbf{Bảng xếp hạng (Leaderboard):} Hiển thị top người chơi có nhiều chiến thắng nhất.
+    \item \textbf{Thống kê cá nhân (Stats):} Số trận, số thắng, tỉ lệ thắng, tổng kills.
+    \item \textbf{Hệ thống danh hiệu (Achievements):} Trao thưởng cho các thành tích đặc biệt.
+\end{itemize}
+... chúng ta cần một hệ quản trị cơ sở dữ liệu (DBMS) để lưu trữ dữ liệu vĩnh viễn.
+
+\section{Lựa chọn DBMS: MariaDB}
+MariaDB được chọn vì:
+\begin{itemize}
+    \item Mã nguồn mở, miễn phí, tương thích cao với MySQL.
+    \item Hỗ trợ đầy đủ các tính năng SQL chuẩn: JOIN, INDEX, TRANSACTION.
+    \item Dễ dàng cài đặt trên Windows/Linux, tích hợp tốt với Node.js qua thư viện \texttt{mariadb}.
+\end{itemize}
+
+\section{Thiết kế Schema}
+\begin{lstlisting}[language=SQL, caption={Schema SQL cho bảng player\_stats}]
+CREATE DATABASE IF NOT EXISTS graphwar
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_general_ci;
+
+USE graphwar;
+
+CREATE TABLE IF NOT EXISTS player_stats (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  name VARCHAR(64) NOT NULL,
+  total_games INT NOT NULL DEFAULT 0,
+  total_wins INT NOT NULL DEFAULT 0,
+  total_kills INT NOT NULL DEFAULT 0,
+  best_multi_kill INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP 
+             ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_player_name (name)
+);
+\end{lstlisting}
+
+\subsection{Giải thích các trường}
+\begin{table}[H]
+    \centering
+    \caption{Mô tả các trường trong bảng player\_stats}
+    \label{tab:schema_fields}
+    \begin{tabularx}{\textwidth}{|l|l|X|}
+        \hline
+        \textbf{Trường} & \textbf{Kiểu dữ liệu} & \textbf{Mô tả} \\
+        \hline
+        \texttt{id} & BIGINT UNSIGNED & Khóa chính, tự động tăng. \\
+        \hline
+        \texttt{name} & VARCHAR(64) & Tên người chơi (unique). \\
+        \hline
+        \texttt{total\_games} & INT & Tổng số trận đã tham gia. \\
+        \hline
+        \texttt{total\_wins} & INT & Tổng số trận thắng. \\
+        \hline
+        \texttt{total\_kills} & INT & Tổng số lính địch đã tiêu diệt. \\
+        \hline
+        \texttt{best\_multi\_kill} & INT & Số lính tiêu diệt nhiều nhất trong một lượt bắn. \\
+        \hline
+        \texttt{created\_at} & TIMESTAMP & Thời điểm tạo bản ghi. \\
+        \hline
+        \texttt{updated\_at} & TIMESTAMP & Thời điểm cập nhật gần nhất. \\
+        \hline
+    \end{tabularx}
+\end{table}
+
+\section{Các thao tác CRUD chính}
+\subsection{Ghi nhận kết quả trận đấu (UPSERT)}
+Khi một trận đấu kết thúc, server gọi hàm \texttt{recordMatch()} để cập nhật thống kê cho tất cả người chơi:
+
+\begin{lstlisting}[language=SQL, caption={Câu lệnh UPSERT để cập nhật stats}]
+INSERT INTO player_stats 
+  (name, total_games, total_wins, total_kills, best_multi_kill)
+VALUES (?, ?, ?, ?, ?)
+ON DUPLICATE KEY UPDATE
+  total_games = total_games + VALUES(total_games),
+  total_wins = total_wins + VALUES(total_wins),
+  total_kills = total_kills + VALUES(total_kills),
+  best_multi_kill = GREATEST(best_multi_kill, VALUES(best_multi_kill)),
+  updated_at = CURRENT_TIMESTAMP;
+\end{lstlisting}
+
+Câu lệnh \texttt{ON DUPLICATE KEY UPDATE} đảm bảo:
+\begin{itemize}
+    \item Nếu người chơi chưa tồn tại $\Rightarrow$ INSERT bản ghi mới.
+    \item Nếu đã tồn tại $\Rightarrow$ UPDATE cộng dồn các giá trị.
+\end{itemize}
+
+\subsection{Truy vấn bảng xếp hạng}
+\begin{lstlisting}[language=SQL, caption={Truy vấn Top 5 người chơi}]
+SELECT name, total_games, total_wins, total_kills, best_multi_kill
+FROM player_stats
+ORDER BY total_wins DESC, 
+         (total_wins / NULLIF(total_games, 0)) DESC,
+         total_games DESC
+LIMIT 5;
+\end{lstlisting}
+
+% ==================================================================
+% CHƯƠNG 4: XỬ LÝ HÀM SỐ VÀ VẬT LÝ GAME
+% ==================================================================
+\chapter{XỬ LÝ HÀM SỐ VÀ VẬT LÝ GAME}
+
+\section{Parser biểu thức toán học}
+Một trong những thách thức kỹ thuật quan trọng nhất của Graphwar là việc phân tích cú pháp (parse) và tính giá trị (evaluate) các biểu thức toán học do người chơi nhập vào.
+
+\subsection{Tokenizer}
+Bước đầu tiên là tách chuỗi đầu vào thành các \textbf{tokens}:
+\begin{itemize}
+    \item \textbf{Number:} \texttt{3.14}, \texttt{-2}, \texttt{1e5}
+    \item \textbf{Variable:} \texttt{x}
+    \item \textbf{Operator:} \texttt{+}, \texttt{-}, \texttt{*}, \texttt{/}, \texttt{\^{}}
+    \item \textbf{Function:} \texttt{sin}, \texttt{cos}, \texttt{tan}, \texttt{sqrt}, \texttt{ln}, \texttt{abs}
+    \item \textbf{Parenthesis:} \texttt{(}, \texttt{)}
+\end{itemize}
+
+\subsection{Recursive Descent Parser}
+Parser xây dựng cây cú pháp trừu tượng (AST) theo thứ tự ưu tiên toán tử:
+\begin{enumerate}
+    \item Cộng/Trừ (thấp nhất)
+    \item Nhân/Chia
+    \item Lũy thừa
+    \item Hàm và dấu ngoặc (cao nhất)
+\end{enumerate}
+
+\subsection{Evaluator}
+Với mỗi giá trị $x$ cụ thể, AST được duyệt đệ quy để tính giá trị $y = f(x)$.
+
+\section{Mô phỏng vật lý (Physics Simulation)}
+\subsection{Thuật toán vẽ quỹ đạo}
+Quỹ đạo được rời rạc hóa thành một mảng các điểm \texttt{(x, y)} với bước nhảy $\Delta x$ cố định:
+
+\begin{lstlisting}[language=JavaScript, caption={Pseudocode mô phỏng quỹ đạo}]
+function simulateShot(functionString, startX, startY) {
+  const path = [];
+  const f = parse(functionString);
+  
+  for (let step = 0; step < MAX_STEPS; step++) {
+    const x = startX + step * DELTA_X * direction;
+    const y = startY + evaluate(f, x - startX);
+    
+    if (isOutOfBounds(x, y)) break;
+    if (collidesWithTerrain(x, y)) break;
+    
+    path.push({ x, y });
+    
+    // Check hit detection
+    for (soldier of allSoldiers) {
+      if (distance(x, y, soldier) < HIT_RADIUS) {
+        recordHit(soldier, step);
+      }
+    }
+  }
+  return path;
+}
+\end{lstlisting}
+
+\subsection{Phát hiện va chạm (Collision Detection)}
+Terrain trong Graphwar được biểu diễn bằng các hình tròn. Để kiểm tra va chạm:
+
+\begin{equation}
+    \text{collide}(P, C) = \sqrt{(P_x - C_x)^2 + (P_y - C_y)^2} < C_r
+\end{equation}
+
+Trong đó $P = (P_x, P_y)$ là điểm trên quỹ đạo, $C = (C_x, C_y, C_r)$ là hình tròn địa hình.
+
+% ==================================================================
+% CHƯƠNG 5: TÍCH HỢP AI HINT
+% ==================================================================
+\chapter{TÍCH HỢP TRÍ TUỆ NHÂN TẠO}
+
+\section{Động lực và Ý nghĩa}
+Graphwar đòi hỏi người chơi phải có kiến thức nhất định về hàm số toán học. Đối với người mới, việc ``bắn trúng'' mục tiêu có thể rất khó khăn. Tính năng \textbf{AI Hint} được thiết kế để:
+\begin{itemize}
+    \item Hỗ trợ người chơi mới làm quen với các dạng hàm số phổ biến.
+    \item Tăng tính hấp dẫn của trò chơi bằng cách giảm bớt rào cản đầu vào.
+    \item Minh họa khả năng ứng dụng của Mô hình ngôn ngữ lớn (LLM) trong việc giải quyết bài toán hình học thực tế.
+\end{itemize}
+
+\section{Kiến trúc tích hợp LLM}
+\subsection{Quy trình xử lý}
+\begin{enumerate}
+    \item Client gửi \texttt{hint.request} với tọa độ người bắn và mục tiêu.
+    \item Server xây dựng \textbf{Prompt} mô tả bài toán hình học.
+    \item LLM trả về hàm số gợi ý.
+    \item Server \textbf{mô phỏng} quỹ đạo để kiểm tra tính hợp lệ.
+    \item Nếu quỹ đạo chạm terrain $\Rightarrow$ yêu cầu LLM thử lại (tối đa N lần).
+    \item Gửi \texttt{hint.response} về Client.
+\end{enumerate}
+
+\subsection{Prompt Engineering}
+Prompt được thiết kế theo cấu trúc:
+\begin{enumerate}
+    \item \textbf{System Prompt:} Định nghĩa vai trò của AI là ``chuyên gia toán học''.
+    \item \textbf{Context:} Mô tả tọa độ shooter, target, và các ràng buộc (terrain, bounds).
+    \item \textbf{Instruction:} Yêu cầu trả về hàm số $y = f(x)$ thỏa mãn $f(0) = 0$ và $f(target_x - shooter_x) \approx target_y - shooter_y$.
+    \item \textbf{Output Format:} Yêu cầu JSON với trường \texttt{functionString} và \texttt{explanation}.
+\end{enumerate}
+
+\section{Xử lý Retry với Feedback Loop}
+Khi LLM đưa ra hàm số mà quỹ đạo va chạm terrain, server gửi lại prompt với thông tin phản hồi:
+
+\begin{verbatim}
+Previous attempt: y = sin(x/50)*100
+Result: Collided with terrain at (120, 85)
+Please suggest a different function that avoids this obstacle.
+\end{verbatim}
+
+Cơ chế này giúp LLM ``học'' từ sai lầm và đưa ra gợi ý tốt hơn trong các lần thử tiếp theo.
+
+% ==================================================================
+% CHƯƠNG 6: GIAO DIỆN NGƯỜI DÙNG
+% ==================================================================
+\chapter{GIAO DIỆN NGƯỜI DÙNG}
+
+\section{Thiết kế UI/UX}
+Giao diện được thiết kế theo triết lý \textbf{Minimalist Gaming UI}:
+\begin{itemize}
+    \item Màu sắc chủ đạo: xanh lục (team 1) và đỏ (team 2) trên nền tối.
+    \item Font chữ monospace cho các input hàm số (giống terminal).
+    \item Responsive layout: hoạt động tốt trên cả desktop và tablet.
+\end{itemize}
+
+\section{Các màn hình chính}
+\subsection{Lobby (Sảnh chờ)}
+\begin{itemize}
+    \item Danh sách phòng đang mở với thông tin: tên phòng, số người chơi, trạng thái.
+    \item Form tạo phòng mới với các tùy chọn: preset (1vX, 2v2, 4v4), difficulty.
+    \item Khung chat thời gian thực.
+    \item Bảng \textbf{Stats} hiển thị thống kê cá nhân và Top 5 leaderboard.
+\end{itemize}
+
+\subsection{Room (Phòng chờ)}
+\begin{itemize}
+    \item Danh sách người chơi trong phòng với trạng thái Ready/Not Ready.
+    \item Nút thêm Bot (cho owner).
+    \item Nút Start Game (khi đủ điều kiện).
+\end{itemize}
+
+\subsection{Game (Màn hình chơi)}
+\begin{itemize}
+    \item Canvas vẽ terrain, lính, và quỹ đạo đạn.
+    \item Input nhập hàm số với preview quỹ đạo (ở chế độ Practice).
+    \item Timer đếm ngược thời gian lượt.
+    \item Nút ``Hint'' để yêu cầu AI gợi ý.
+\end{itemize}
+
+\section{Hệ thống danh hiệu (Achievements)}
+Dựa trên dữ liệu trong CSDL, hệ thống tự động trao danh hiệu cho người chơi:
+
+\begin{table}[H]
+    \centering
+    \caption{Danh sách danh hiệu và điều kiện}
+    \label{tab:achievements}
+    \begin{tabularx}{\textwidth}{|l|X|}
+        \hline
+        \textbf{Danh hiệu} & \textbf{Điều kiện} \\
+        \hline
+        Tập sự đồ họa & Thắng ít nhất 1 trận. \\
+        \hline
+        Bậc thầy hàm số & Thắng ít nhất 10 trận. \\
+        \hline
+        Thần đồng toán học & Tỉ lệ thắng trên 80\% (với ít nhất 5 trận). \\
+        \hline
+        Xuyên táo & Tiêu diệt $\geq 2$ lính địch trong một lượt bắn. \\
+        \hline
+    \end{tabularx}
+\end{table}
+
+% ==================================================================
+% CHƯƠNG 7: KẾT QUẢ VÀ ĐÁNH GIÁ
+% ==================================================================
+\chapter{KẾT QUẢ VÀ ĐÁNH GIÁ}
+
+\section{Kết quả đạt được}
+Sau quá trình phát triển, nhóm đã hoàn thành một ứng dụng Web game Graphwar với đầy đủ các tính năng:
+
+\begin{enumerate}
+    \item \textbf{Gameplay hoàn chỉnh:}
+    \begin{itemize}
+        \item Hỗ trợ nhiều chế độ chơi: 1vX, 2v2, 4v4.
+        \item Hệ thống Bot AI với các mức độ khó khác nhau.
+        \item Preview quỹ đạo trong chế độ Practice.
+    \end{itemize}
+    
+    \item \textbf{Real-time multiplayer:}
+    \begin{itemize}
+        \item Đồng bộ trạng thái game qua WebSocket với độ trễ thấp.
+        \item Chat thời gian thực trong phòng.
+    \end{itemize}
+    
+    \item \textbf{Hệ thống CSDL:}
+    \begin{itemize}
+        \item Lưu trữ thống kê người chơi vào MariaDB.
+        \item Bảng xếp hạng Top 5 hiển thị ngay tại Lobby.
+        \item Hệ thống danh hiệu tự động trao thưởng.
+    \end{itemize}
+    
+    \item \textbf{Tích hợp AI:}
+    \begin{itemize}
+        \item LLM gợi ý hàm số với cơ chế retry thông minh.
+        \item Feedback loop giúp cải thiện chất lượng gợi ý.
+    \end{itemize}
+\end{enumerate}
+
+\section{Đánh giá}
+\subsection{Ưu điểm}
+\begin{itemize}
+    \item Kiến trúc \textbf{Monorepo + TypeScript} đảm bảo tính nhất quán về kiểu dữ liệu giữa client và server.
+    \item Thiết kế \textbf{Protocol Messages} chặt chẽ giúp dễ dàng debug và mở rộng.
+    \item Tách biệt rõ ràng giữa logic game (shared), server (node), và UI (react).
+\end{itemize}
+
+\subsection{Hạn chế và Hướng phát triển}
+\begin{itemize}
+    \item \textbf{Chưa có hệ thống tài khoản:} Hiện tại stats được lưu theo ``tên'' người chơi, chưa có xác thực.
+    \item \textbf{Chưa tối ưu cho mobile:} Giao diện chưa được thiết kế riêng cho màn hình nhỏ.
+    \item \textbf{AI Hint phụ thuộc Cloud API:} Có độ trễ và chi phí khi gọi LLM bên ngoài.
+\end{itemize}
+
+\textbf{Hướng phát triển:}
+\begin{itemize}
+    \item Thêm hệ thống đăng ký/đăng nhập với OAuth (Google, GitHub).
+    \item Replay system: lưu lại và xem lại các trận đấu.
+    \item Mobile app với React Native.
+    \item Self-hosted LLM để giảm chi phí và độ trễ.
+\end{itemize}
+
+% ==================================================================
+% KẾT LUẬN
+% ==================================================================
+\chapter*{KẾT LUẬN}
+\addcontentsline{toc}{chapter}{KẾT LUẬN}
+
+Dự án Graphwar Web đã giúp nhóm chúng em trải nghiệm toàn bộ quy trình phát triển một ứng dụng Web hiện đại: từ thiết kế kiến trúc, xây dựng giao thức truyền thông, đến tích hợp cơ sở dữ liệu và trí tuệ nhân tạo.
+
+Điều đặc biệt của dự án này là sự giao thoa giữa các lĩnh vực:
+\begin{itemize}
+    \item \textbf{Toán học:} Parser và evaluator biểu thức, mô phỏng quỹ đạo hàm số.
+    \item \textbf{Khoa học máy tính:} Kiến trúc client-server, giao thức WebSocket, quản lý state.
+    \item \textbf{Cơ sở dữ liệu:} Thiết kế schema, truy vấn SQL, UPSERT pattern.
+    \item \textbf{Trí tuệ nhân tạo:} Prompt engineering, feedback loop với LLM.
+\end{itemize}
+
+Graphwar không chỉ là một trò chơi, mà còn là một công cụ giáo dục --- nơi người chơi được khuyến khích khám phá vẻ đẹp của toán học thông qua sự cạnh tranh và chiến thuật. Chúng em hy vọng dự án này sẽ truyền cảm hứng cho những ai yêu thích cả lập trình lẫn toán học, và là nền tảng để tiếp tục phát triển các tính năng mới trong tương lai.
+
+% ==================================================================
+% TÀI LIỆU THAM KHẢO
+% ==================================================================
+\renewcommand{\bibname}{TÀI LIỆU THAM KHẢO}
+\begin{thebibliography}{9}
+    \addcontentsline{toc}{chapter}{\bibname}
+    
+    \bibitem{react2024} Meta, ``React Documentation'', \url{https://react.dev}, 2024.
+    
+    \bibitem{nodejs2024} OpenJS Foundation, ``Node.js Documentation'', \url{https://nodejs.org/docs}, 2024.
+    
+    \bibitem{websocket2024} Mozilla Developer Network, ``The WebSocket API'', \url{https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API}, 2024.
+    
+    \bibitem{mariadb2024} MariaDB Foundation, ``MariaDB Server Documentation'', \url{https://mariadb.com/kb/en/documentation/}, 2024.
+    
+    \bibitem{typescript2024} Microsoft, ``TypeScript Documentation'', \url{https://www.typescriptlang.org/docs/}, 2024.
+    
+    \bibitem{vite2024} Evan You, ``Vite: Next Generation Frontend Tooling'', \url{https://vitejs.dev}, 2024.
+    
+    \bibitem{graphwar_original} Graphwar Original Project, \url{https://github.com/graphwar}, (Mã nguồn mở).
+    
+\end{thebibliography}
+
+% ==================================================================
+% PHỤ LỤC: HƯỚNG DẪN CÀI ĐẶT
+% ==================================================================
+\chapter*{PHỤ LỤC: HƯỚNG DẪN CÀI ĐẶT VÀ CHẠY DỰ ÁN}
+\addcontentsline{toc}{chapter}{PHỤ LỤC: HƯỚNG DẪN CÀI ĐẶT}
+
+\section*{Yêu cầu hệ thống}
+\begin{itemize}
+    \item Node.js 18+ 
+    \item MariaDB 10.6+ (hoặc MySQL 8+)
+    \item Trình duyệt hiện đại (Chrome, Firefox, Edge)
+\end{itemize}
+
+\section*{Các bước cài đặt}
+
+\textbf{Bước 1: Clone repository và cài đặt dependencies}
+\begin{lstlisting}[language=bash]
+git clone https://github.com/your-repo/graphwar_web.git
+cd graphwar_web
+npm install
+\end{lstlisting}
+
+\textbf{Bước 2: Tạo database}
+\begin{lstlisting}[language=bash]
+# Windows PowerShell
+Get-Content .\server\sql\schema.sql -Raw | `
+  & "C:\Program Files\MariaDB 11.8\bin\mariadb.exe" -u root -p
+\end{lstlisting}
+
+\textbf{Bước 3: Cấu hình file .env}
+\begin{lstlisting}[language=bash]
+# Copy file mau
+cp server/.env.example server/.env
+
+# Chinh sua cac gia tri trong server/.env:
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=your_password
+DB_DATABASE=graphwar
+\end{lstlisting}
+
+\textbf{Bước 4: Chạy ứng dụng}
+\begin{lstlisting}[language=bash]
+npm run dev
+\end{lstlisting}
+
+Ứng dụng sẽ khởi động tại:
+\begin{itemize}
+    \item Client: \url{http://localhost:5173}
+    \item Server WebSocket: \url{ws://localhost:8080/ws}
+\end{itemize}
+
+\end{document}

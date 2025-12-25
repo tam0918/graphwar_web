@@ -3,6 +3,7 @@ import http from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
 import { nanoid } from "nanoid";
 import { generateLlmHint } from "./llmHint";
+import { createStatsDbFromEnv } from "./statsDb";
 import {
   encodeMessage,
   PROTOCOL_VERSION,
@@ -24,6 +25,7 @@ import {
   type RoomSummary,
   type ServerToClientMessage,
   type LastGameOver,
+  type PlayerStats,
 } from "@graphwar/shared";
 
 type Client = {
@@ -62,6 +64,7 @@ type Room = {
       hits: Array<{ targetClientId: string; soldierIndex: number; killStep: number }>;
       path: Array<{ x: number; y: number }>;
     };
+    matchStatsByClientId: Map<string, { kills: number; bestMultiKill: number }>;
     timers: Set<NodeJS.Timeout>;
     botTurnScheduledFor?: string;
   };
@@ -84,6 +87,12 @@ const wss = new WebSocketServer({ server, path: "/ws" });
 
 const clientsBySocket = new Map<WebSocket, Client>();
 const roomsById = new Map<string, Room>();
+
+const statsDb = createStatsDbFromEnv();
+void statsDb.init().catch((e) => {
+  // eslint-disable-next-line no-console
+  console.warn("[statsDb] init failed (server will continue without DB):", e);
+});
 
 function now() {
   return Date.now();
@@ -238,6 +247,26 @@ function endGame(room: Room): void {
       winners,
       endedAt: now(),
     };
+  }
+
+  // Persist match stats (best-effort, never blocks gameplay).
+  if (room.game && room.lastGameOver && statsDb.enabled) {
+    const g = room.game;
+    const winnerIds = new Set(room.lastGameOver.winners.map((w) => w.clientId));
+    const players = g.players.map((p) => {
+      const ms = g.matchStatsByClientId.get(p.clientId) ?? { kills: 0, bestMultiKill: 0 };
+      return {
+        name: p.name,
+        didWin: winnerIds.has(p.clientId),
+        kills: ms.kills,
+        bestMultiKill: ms.bestMultiKill,
+      };
+    });
+
+    void statsDb.recordMatch({ players }).catch((e) => {
+      // eslint-disable-next-line no-console
+      console.warn("[statsDb] recordMatch failed:", e);
+    });
   }
 
   if (room.game) {
@@ -704,6 +733,7 @@ function startGame(room: Room): void {
     currentTurnIndex: startIdx,
     timeTurnStarted: now(),
     phase: "playing",
+    matchStatsByClientId: new Map(players.map((p) => [p.clientId, { kills: 0, bestMultiKill: 0 }])),
     timers: new Set<NodeJS.Timeout>(),
   };
 
@@ -744,6 +774,13 @@ function fireShot(room: Room, byClientId: string, functionStringRaw: string): st
     const targetPlayer = g.players.find((p) => p.clientId === h.targetClientId);
     return !!targetPlayer && targetPlayer.team !== shooterTeam;
   });
+
+  // Track per-match stats for achievements / leaderboard.
+  const ms = g.matchStatsByClientId.get(byClientId);
+  if (ms) {
+    ms.kills += enemyHits.length;
+    ms.bestMultiKill = Math.max(ms.bestMultiKill, enemyHits.length);
+  }
 
   g.phase = "animating_shot";
   g.lastShot = {
@@ -834,6 +871,27 @@ function handleMessage(ws: WebSocket, msg: ClientToServerMessage) {
 
     case "lobby.listRooms": {
       send(ws, { type: "lobby.state", rooms: getLobbyState() });
+      return;
+    }
+
+    case "stats.get": {
+      const top = Math.max(1, Math.min(50, msg.top ?? 5));
+      if (!statsDb.enabled) {
+        send(ws, { type: "stats.me", stats: null });
+        send(ws, { type: "stats.leaderboard", entries: [] });
+        return;
+      }
+
+      void (async () => {
+        try {
+          const me: PlayerStats = await statsDb.getPlayer(client.name);
+          const entries = await statsDb.getLeaderboard(top);
+          send(ws, { type: "stats.me", stats: me });
+          send(ws, { type: "stats.leaderboard", entries });
+        } catch {
+          send(ws, { type: "error", message: "DB error while loading stats" });
+        }
+      })();
       return;
     }
 

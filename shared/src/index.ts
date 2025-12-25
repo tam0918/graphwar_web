@@ -101,9 +101,19 @@ export type GameState = {
   };
 };
 
+export type PlayerStats = {
+  name: string;
+  totalGames: number;
+  totalWins: number;
+  winRate: number; // 0..1
+  totalKills: number;
+  bestMultiKill: number;
+};
+
 export type ClientToServerMessage =
   | { type: "hello"; name: string }
   | { type: "lobby.listRooms" }
+  | { type: "stats.get"; top?: number }
   | {
       type: "room.create";
       name: string;
@@ -130,10 +140,12 @@ export type ServerToClientMessage =
   | { type: "lobby.state"; rooms: RoomSummary[] }
   | { type: "room.state"; room: RoomState | null }
   | { type: "chat.msg"; roomId: string; from: string; text: string; ts: number }
+  | { type: "stats.me"; stats: PlayerStats | null }
+  | { type: "stats.leaderboard"; entries: PlayerStats[] }
   | { type: "hint.progress"; attempt: number; maxAttempts: number; status: "thinking" | "done" | "error" }
   | { type: "hint.response"; functionString: string; explanation?: string; debug?: { events: HintLlmDebugEvent[] } };
 
-export const PROTOCOL_VERSION = 7 as const;
+export const PROTOCOL_VERSION = 8 as const;
 
 export * from "./gameConstants";
 export * from "./game/physics";

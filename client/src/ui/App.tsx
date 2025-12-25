@@ -10,6 +10,7 @@ import {
   type RoomState,
   type RoomSummary,
   type ServerToClientMessage,
+  type PlayerStats,
 } from "@graphwar/shared";
 import { GameCanvas } from "./GameCanvas";
 
@@ -46,6 +47,9 @@ export function App() {
   const [rooms, setRooms] = useState<RoomSummary[]>([]);
   const [room, setRoom] = useState<RoomState | null>(null);
   const [chat, setChat] = useState<ChatLine[]>([]);
+
+  const [myStats, setMyStats] = useState<PlayerStats | null>(null);
+  const [leaderboard, setLeaderboard] = useState<PlayerStats[]>([]);
 
   const [newRoomName, setNewRoomName] = useState("My Room");
   const [newRoomPreset, setNewRoomPreset] = useState<MatchPreset>("1vX");
@@ -150,12 +154,18 @@ export function App() {
       setConnected(true);
       setChat([]);
       setClientId(null);
+      setMyStats(null);
+      setLeaderboard([]);
       send({ type: "hello", name });
+      // Best-effort; server will ignore if DB isn't enabled.
+      send({ type: "stats.get", top: 5 });
     };
 
     ws.onclose = () => {
       setConnected(false);
       setRoom(null);
+      setMyStats(null);
+      setLeaderboard([]);
     };
 
     ws.onmessage = (ev) => {
@@ -183,6 +193,10 @@ export function App() {
         }
       } else if (msg.type === "chat.msg") {
         setChat((prev) => prev.concat({ from: msg.from, text: msg.text, ts: msg.ts }));
+      } else if (msg.type === "stats.me") {
+        setMyStats(msg.stats);
+      } else if (msg.type === "stats.leaderboard") {
+        setLeaderboard(msg.entries);
       } else if (msg.type === "hint.response") {
         // eslint-disable-next-line no-console
         console.log("[WS recv] hint.response", msg);
@@ -212,6 +226,14 @@ export function App() {
       }
     };
   }
+
+  useEffect(() => {
+    if (!connected) return;
+    if (!lastGameOver) return;
+    // Pull updated leaderboard after a match ends.
+    send({ type: "stats.get", top: 5 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected, lastGameOver?.endedAt]);
 
   useEffect(() => {
     // Live trajectory preview while typing, only for the current player.
@@ -468,6 +490,69 @@ export function App() {
                     disabled={!connected}
                   >
                     Leave
+                  </button>
+                </div>
+
+                <div>
+                  <h3>Stats</h3>
+                  {myStats ? (
+                    <div className="gw-muted" style={{ fontSize: 12, lineHeight: 1.6 }}>
+                      <div>
+                        <strong>{myStats.name}</strong>
+                      </div>
+                      <div>
+                        games: {myStats.totalGames} • wins: {myStats.totalWins} • winrate: {Math.round(myStats.winRate * 100)}%
+                      </div>
+                      <div>
+                        kills: {myStats.totalKills} • best multi-kill: {myStats.bestMultiKill}
+                      </div>
+                      <div style={{ marginTop: 6 }}>
+                        <strong>Danh hiệu:</strong>{" "}
+                        {[
+                          myStats.totalWins >= 1 ? "Tập sự đồ họa" : null,
+                          myStats.totalWins >= 10 ? "Bậc thầy hàm số" : null,
+                          myStats.totalGames > 0 && myStats.winRate > 0.8 ? "Thần đồng toán học" : null,
+                          myStats.bestMultiKill >= 2 ? "Xuyên táo" : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" • ") || "Chưa có"}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="gw-faint" style={{ fontSize: 12 }}>
+                      Chưa có stats (hoặc DB chưa bật).
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: 10 }}>
+                    <h3>Top 5</h3>
+                    {leaderboard.length ? (
+                      <ul className="gw-list" style={{ gap: 6 }}>
+                        {leaderboard.map((p) => (
+                          <li key={p.name} className="gw-listItem" style={{ padding: "8px 10px" }}>
+                            <div style={{ minWidth: 0 }}>
+                              <strong>{p.name}</strong>
+                              <div className="gw-listMeta">
+                                wins: {p.totalWins} • games: {p.totalGames} • WR: {Math.round(p.winRate * 100)}%
+                              </div>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="gw-faint" style={{ fontSize: 12 }}>
+                        (Trống)
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    className="gw-btn"
+                    style={{ marginTop: 10 }}
+                    onClick={() => send({ type: "stats.get", top: 5 })}
+                    disabled={!connected}
+                  >
+                    Refresh stats
                   </button>
                 </div>
 
