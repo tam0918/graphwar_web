@@ -14,7 +14,7 @@ Chúng tôi chân thành cảm ơn tác giả gốc đã tạo ra một trò ch�
 - **Toán học tương tác:** Sử dụng các hàm số toán học ($y = f(x)$) để điều khiển quỹ đạo đạn.
 - **Hệ thống CSDL:** Lưu trữ thống kê người chơi, bảng xếp hạng và danh hiệu bằng MariaDB.
 - **AI Hint:** Tích hợp Mô hình ngôn ngữ lớn (LLM) để gợi ý hàm số cho người chơi.
-- **Bot AI:** Chế độ luyện tập với Bot có nhiều mức độ khó.
+- **Bot (heuristic):** Hỗ trợ thêm bot để lấp phòng/chơi thử; bot chọn hàm đơn giản theo mục tiêu gần nhất.
 
 ## 🛠 Công nghệ sử dụng
 - **Frontend:** React, TypeScript, Vite.

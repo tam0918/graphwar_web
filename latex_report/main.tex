@@ -93,12 +93,13 @@
 
         \begin{tabular}{l l}
             \textbf{Nhóm thực hiện:} & \\
-            \quad 1. Lường Văn Tâm & (MSSV: 2200xxxx) \\
-            \quad 2. Khương Thanh Tín & (MSSV: 2200xxxx) \\
-            \quad 3. Cao Thanh Phương & (MSSV: 2200xxxx) \\
+            \quad 1. Lường Văn Tâm & (MSSV: 22001349) \\
+            \quad 2. Khương Thanh Tín & (MSSV: 22001358) \\
+            \quad 3. Cao Thanh Phương & (MSSV: 22001341) \\
             & \\
             \textbf{Lớp:} & K67 Kỹ thuật điện tử và Tin học \\
-            \textbf{Giảng viên hướng dẫn:} & (Điền tên giảng viên) \\
+            \textbf{Giảng viên hướng dẫn:} & GS.TS Nguyễn Thế Toàn \\
+            & Nguyễn Nhật Tùng \\
         \end{tabular}
 
         \vfill
@@ -114,7 +115,7 @@
 
 Trước hết, nhóm chúng em xin gửi lời cảm ơn chân thành đến quý Thầy/Cô trong Khoa Vật lý, Trường Đại học Khoa học Tự nhiên -- ĐHQGHN, đã tận tình giảng dạy và tạo điều kiện để chúng em được tiếp cận với các công nghệ phát triển ứng dụng Web hiện đại.
 
-Đặc biệt, chúng em xin cảm ơn giảng viên hướng dẫn môn học đã định hướng và góp ý trong suốt quá trình thực hiện đồ án. Những phản hồi quý báu đã giúp nhóm hoàn thiện hơn cả về mặt kỹ thuật lẫn tư duy thiết kế hệ thống.
+Đặc biệt, chúng em xin cảm ơn các giảng viên hướng dẫn môn học (GS.TS Nguyễn Thế Toàn và Nguyễn Nhật Tùng) đã định hướng và góp ý trong suốt quá trình thực hiện đồ án. Những phản hồi quý báu đã giúp nhóm hoàn thiện hơn cả về mặt kỹ thuật lẫn tư duy thiết kế hệ thống.
 
 Dự án Graphwar Web không chỉ là một bài tập lập trình đơn thuần, mà còn là cơ hội để chúng em chiêm nghiệm về sự giao thoa giữa Toán học và Công nghệ --- nơi mà mỗi hàm số không chỉ là một biểu thức trừu tượng, mà còn là một ``viên đạn'' mang tính chiến thuật trong không gian trò chơi.
 
@@ -188,7 +189,7 @@ Cuối cùng, chúng em xin gửi lời chúc sức khỏe và thành công đ�
 \section{Lý do chọn đề tài}
 Trong kỷ nguyên số hóa, ranh giới giữa giáo dục và giải trí ngày càng trở nên mờ nhạt. Các trò chơi điện tử không còn đơn thuần là phương tiện tiêu khiển mà đã trở thành công cụ mạnh mẽ để truyền tải kiến thức --- một xu hướng được gọi là \textit{Gamification} (trò chơi hóa). Graphwar, với ý tưởng ban đầu được phát triển bởi cộng đồng mã nguồn mở, là một minh chứng điển hình cho sự giao thoa giữa Toán học và Chiến thuật: người chơi ``bắn'' đối thủ bằng cách nhập các hàm số toán học, và quỹ đạo của ``viên đạn'' chính là đồ thị của hàm số đó.
 
-Đối với nhóm sinh viên chuyên ngành Khoa học tính toán và Trí tuệ nhân tạo, việc tái hiện Graphwar trên nền tảng Web hiện đại không chỉ là một bài tập về lập trình, mà còn là cơ hội để chiêm nghiệm sâu hơn về:
+Đối với nhóm sinh viên thuộc ngành \textbf{Kỹ thuật điện tử và tin học}, chuyên ngành \textbf{Khoa học tính toán và Trí tuệ nhân tạo}, việc tái hiện Graphwar trên nền tảng Web hiện đại không chỉ là một bài tập về lập trình, mà còn là cơ hội để chiêm nghiệm sâu hơn về:
 \begin{itemize}
     \item Bản chất của các hàm số và cách chúng được biểu diễn trong không gian hai chiều.
     \item Kiến trúc ứng dụng Web thời gian thực với mô hình Client-Server và giao thức WebSocket.
@@ -205,6 +206,30 @@ Mục tiêu của đồ án là xây dựng một ứng dụng Web hoàn chỉnh
     \item \textbf{Tính năng AI Hint:} Tích hợp mô hình ngôn ngữ lớn (LLM) để gợi ý hàm số phù hợp cho người chơi mới.
     \item \textbf{Giao diện thân thiện:} Thiết kế UI/UX trực quan, dễ sử dụng trên trình duyệt hiện đại.
 \end{enumerate}
+
+\section{Đối tượng sử dụng}
+\begin{itemize}
+    \item \textbf{Sinh viên, học sinh:} Sử dụng để ôn luyện kiến thức hàm số toán học, hình dung trực quan về đồ thị.
+    \item \textbf{Người yêu thích game chiến thuật:} Trải nghiệm lối chơi mới lạ kết hợp giữa tính toán và kỹ năng.
+    \item \textbf{Giáo viên toán học:} Sử dụng như một công cụ minh họa sinh động trong các bài giảng về hàm số.
+\end{itemize}
+
+\section{Yêu cầu hệ thống}
+\subsection{Yêu cầu chức năng}
+\begin{itemize}
+    \item[FR1] \textbf{Quản lý người chơi:} Đăng ký tên, xem thống kê cá nhân.
+    \item[FR2] \textbf{Quản lý phòng chơi:} Tạo phòng, tham gia phòng, thiết lập cấu hình trận đấu.
+    \item[FR3] \textbf{Gameplay:} Nhập hàm số, mô phỏng quỹ đạo, tính toán va chạm.
+    \item[FR4] \textbf{Tương tác:} Chat thời gian thực, hiển thị danh hiệu dựa trên thành tích.
+    \item[FR5] \textbf{Hỗ trợ AI:} Gợi ý hàm số dựa trên vị trí mục tiêu.
+\end{itemize}
+
+\subsection{Yêu cầu phi chức năng}
+\begin{itemize}
+    \item[NFR1] \textbf{Hiệu năng:} Độ trễ giao tiếp WebSocket dưới 100ms.
+    \item[NFR2] \textbf{Khả dụng:} Tương thích với các trình duyệt phổ biến (Chrome, Firefox, Edge).
+    \item[NFR3] \textbf{Bảo mật:} Kiểm tra và làm sạch dữ liệu đầu vào (hàm số, chat) để tránh tấn công XSS/Injection.
+\end{itemize}
 
 \section{Phạm vi và Phương pháp}
 Đồ án được thực hiện theo mô hình \textbf{Monorepo} với ba workspace:
@@ -276,7 +301,6 @@ Hệ thống được thiết kế theo mô hình \textbf{Client-Server} với g
 \subsection{Sơ đồ kiến trúc tổng quát}
 \begin{verbatim}
     +-------------+       WebSocket        +-------------+
-    |   Client    | <------------------->  |   Server    |
     |  (React)    |                        |  (Node.js)  |
     +-------------+                        +------+------+
                                                   |
@@ -287,6 +311,24 @@ Hệ thống được thiết kế theo mô hình \textbf{Client-Server} với g
                                            | (Stats DB)  |
                                            +-------------+
 \end{verbatim}
+
+\subsection{Sơ đồ Use Case}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{usecase_diagram.png}
+    \caption{Sơ đồ Use Case tổng quát của hệ thống Graphwar Web}
+    \label{fig:usecase}
+\end{figure}
+
+\subsection{Các lớp chính (Class Diagram)}
+Hệ thống áp dụng các nguyên tắc lập trình hướng đối tượng (OOP) để tổ chức mã nguồn rõ ràng:
+
+\begin{itemize}
+    \item \textbf{Game}: Quản lý vòng đời trận đấu, danh sách người chơi, lượt chơi.
+    \item \textbf{Player}: Đại diện cho người chơi (kết nối socket, tên, trạng thái).
+    \item \textbf{Soldier}: Đại diện cho đơn vị lính trên bản đồ (vị trí, HP).
+    \item \textbf{Terrain}: Quản lý địa hình và va chạm.
+\end{itemize}
 
 \section{Cấu trúc thư mục dự án}
 Dự án được tổ chức theo mô hình \textbf{Monorepo} sử dụng npm workspaces:
@@ -333,9 +375,27 @@ Giao tiếp giữa Client và Server được định nghĩa chặt chẽ thông
         \hline
         \texttt{room.join} & Tham gia vào một phòng. \\
         \hline
+        \texttt{room.leave} & Rời phòng hiện tại. \\
+        \hline
+        \texttt{room.setConfig} & Đổi cấu hình phòng (preset/difficulty; chỉ owner, khi chưa start). \\
+        \hline
+        \texttt{room.addBot} / \texttt{room.removeBot} & Thêm/xóa bot để đủ số người chơi (chỉ owner). \\
+        \hline
+        \texttt{player.ready} & Đánh dấu sẵn sàng trong phòng chờ. \\
+        \hline
+        \texttt{game.start} & Bắt đầu trận đấu khi đủ điều kiện. \\
+        \hline
+        \texttt{game.surrender} & Xin thua (tránh kẹt luồng lượt chơi). \\
+        \hline
+        \texttt{game.setMode} & Chọn chế độ mô phỏng (normal / ODE). \\
+        \hline
+        \texttt{game.setAngle} & Điều chỉnh góc bắn (phục vụ ODE bậc hai). \\
+        \hline
         \texttt{game.fire} & Gửi hàm số để thực hiện lượt bắn. \\
         \hline
         \texttt{hint.request} & Yêu cầu AI gợi ý hàm số. \\
+        \hline
+        \texttt{chat.send} & Gửi tin nhắn chat trong phòng. \\
         \hline
         \texttt{stats.get} & Yêu cầu thống kê cá nhân và bảng xếp hạng. \\
         \hline
@@ -353,9 +413,15 @@ Giao tiếp giữa Client và Server được định nghĩa chặt chẽ thông
         \hline
         \texttt{welcome} & Xác nhận kết nối, trả về clientId. \\
         \hline
+        \texttt{error} & Thông báo lỗi (không đúng lượt, phòng đầy, v.v.). \\
+        \hline
         \texttt{lobby.state} & Danh sách các phòng hiện có. \\
         \hline
         \texttt{room.state} & Trạng thái đầy đủ của phòng và game. \\
+        \hline
+        \texttt{chat.msg} & Tin nhắn chat trong phòng (kèm thời gian). \\
+        \hline
+        \texttt{hint.progress} & Tiến độ suy luận của AI (thinking/done/error). \\
         \hline
         \texttt{hint.response} & Hàm số được AI gợi ý. \\
         \hline
@@ -378,7 +444,7 @@ Trong phiên bản cơ bản, toàn bộ trạng thái trò chơi (phòng, ngư�
 \begin{itemize}
     \item \textbf{Bảng xếp hạng (Leaderboard):} Hiển thị top người chơi có nhiều chiến thắng nhất.
     \item \textbf{Thống kê cá nhân (Stats):} Số trận, số thắng, tỉ lệ thắng, tổng kills.
-    \item \textbf{Hệ thống danh hiệu (Achievements):} Trao thưởng cho các thành tích đặc biệt.
+    \item \textbf{Danh hiệu (Achievements):} Hiển thị danh hiệu suy ra từ thống kê (wins, winrate, best multi-kill).
 \end{itemize}
 ... chúng ta cần một hệ quản trị cơ sở dữ liệu (DBMS) để lưu trữ dữ liệu vĩnh viễn.
 
@@ -435,11 +501,18 @@ CREATE TABLE IF NOT EXISTS player_stats (
         \texttt{best\_multi\_kill} & INT & Số lính tiêu diệt nhiều nhất trong một lượt bắn. \\
         \hline
         \texttt{created\_at} & TIMESTAMP & Thời điểm tạo bản ghi. \\
-        \hline
         \texttt{updated\_at} & TIMESTAMP & Thời điểm cập nhật gần nhất. \\
         \hline
     \end{tabularx}
 \end{table}
+
+\subsection{Sơ đồ ERD}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\textwidth]{erd_diagram.png}
+    \caption{Sơ đồ quan hệ thực thể (ERD) cho CSDL Graphwar}
+    \label{fig:erd}
+\end{figure}
 
 \section{Các thao tác CRUD chính}
 \subsection{Ghi nhận kết quả trận đấu (UPSERT)}
@@ -622,8 +695,22 @@ Giao diện được thiết kế theo triết lý \textbf{Minimalist Gaming UI}
     \item Nút ``Hint'' để yêu cầu AI gợi ý.
 \end{itemize}
 
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{screenshot_lobby.png}
+    \caption{Giao diện Sảnh chờ (Lobby)}
+    \label{fig:lobby_ui}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{screenshot_game.png}
+    \caption{Giao diện Màn hình chơi (Game)}
+    \label{fig:game_ui}
+\end{figure}
+
 \section{Hệ thống danh hiệu (Achievements)}
-Dựa trên dữ liệu trong CSDL, hệ thống tự động trao danh hiệu cho người chơi:
+Từ dữ liệu thống kê trong CSDL (số trận, số thắng, tỉ lệ thắng, best multi-kill), client hiển thị \textbf{danh hiệu suy ra từ số liệu} như một lớp diễn giải (interpretation layer). Trong phạm vi đồ án này, danh hiệu \textbf{không cần một bảng riêng} trong CSDL; chúng được tính trực tiếp khi hiển thị:
 
 \begin{table}[H]
     \centering
@@ -656,7 +743,7 @@ Sau quá trình phát triển, nhóm đã hoàn thành một ứng dụng Web ga
     \item \textbf{Gameplay hoàn chỉnh:}
     \begin{itemize}
         \item Hỗ trợ nhiều chế độ chơi: 1vX, 2v2, 4v4.
-        \item Hệ thống Bot AI với các mức độ khó khác nhau.
+        \item Hỗ trợ \textbf{bot (heuristic)} để lấp phòng hoặc chơi thử: bot chọn hàm đơn giản theo mục tiêu gần nhất (ví dụ $m\cdot x$ trong chế độ normal), giúp trận đấu có thể khởi động đủ người.
         \item Preview quỹ đạo trong chế độ Practice.
     \end{itemize}
     
@@ -670,7 +757,7 @@ Sau quá trình phát triển, nhóm đã hoàn thành một ứng dụng Web ga
     \begin{itemize}
         \item Lưu trữ thống kê người chơi vào MariaDB.
         \item Bảng xếp hạng Top 5 hiển thị ngay tại Lobby.
-        \item Hệ thống danh hiệu tự động trao thưởng.
+        \item Hiển thị danh hiệu dựa trên thống kê (wins, winrate, best multi-kill) như một tầng diễn giải ở phía client.
     \end{itemize}
     
     \item \textbf{Tích hợp AI:}
@@ -686,6 +773,15 @@ Sau quá trình phát triển, nhóm đã hoàn thành một ứng dụng Web ga
     \item Kiến trúc \textbf{Monorepo + TypeScript} đảm bảo tính nhất quán về kiểu dữ liệu giữa client và server.
     \item Thiết kế \textbf{Protocol Messages} chặt chẽ giúp dễ dàng debug và mở rộng.
     \item Tách biệt rõ ràng giữa logic game (shared), server (node), và UI (react).
+\end{itemize}
+
+\section{Chất lượng mã nguồn}
+Dự án tuân thủ các quy chuẩn (convention) và nguyên tắc lập trình tốt:
+\begin{itemize}
+    \item \textbf{Naming Convention:} Sử dụng \texttt{camelCase} cho biến/hàm, \texttt{PascalCase} cho Class/Component, và \texttt{UPPER\_CASE} cho hằng số.
+    \item \textbf{Modularization:} Chia nhỏ code thành các module độc lập (Physics, Networking, UI, Database).
+    \item \textbf{Type Safety:} Sử dụng TypeScript strict mode để đảm bảo an toàn kiểu dữ liệu, hạn chế lỗi runtime.
+    \item \textbf{Clean Code:} Code được viết rõ ràng, comment đầy đủ cho các thuật toán phức tạp (như parser hàm số).
 \end{itemize}
 
 \subsection{Hạn chế và Hướng phát triển}
@@ -740,7 +836,7 @@ Graphwar không chỉ là một trò chơi, mà còn là một công cụ giáo 
     
     \bibitem{vite2024} Evan You, ``Vite: Next Generation Frontend Tooling'', \url{https://vitejs.dev}, 2024.
     
-    \bibitem{graphwar_original} Graphwar Original Project, \url{https://github.com/graphwar}, (Mã nguồn mở).
+    \bibitem{graphwar_original} Graphwar Original Project (catabriga), \url{https://github.com/catabriga/graphwar}, (Mã nguồn mở, MIT).
     
 \end{thebibliography}
 
@@ -761,7 +857,7 @@ Graphwar không chỉ là một trò chơi, mà còn là một công cụ giáo 
 
 \textbf{Bước 1: Clone repository và cài đặt dependencies}
 \begin{lstlisting}[language=bash]
-git clone https://github.com/your-repo/graphwar_web.git
+git clone https://github.com/tam0918/graphwar_web.git
 cd graphwar_web
 npm install
 \end{lstlisting}
@@ -796,5 +892,128 @@ npm run dev
     \item Client: \url{http://localhost:5173}
     \item Server WebSocket: \url{ws://localhost:8080/ws}
 \end{itemize}
+
+\section*{Mã nguồn dự án}
+Repository GitHub của project: \url{https://github.com/tam0918/graphwar_web}
+
+\newpage
+% ==================================================================
+% PHỤ LỤC: MÃ NGUỒN SƠ ĐỒ (MERMAID)
+% ==================================================================
+\chapter*{PHỤ LỤC: MÃ NGUỒN SƠ ĐỒ (MERMAID)}
+\addcontentsline{toc}{chapter}{PHỤ LỤC: MÃ NGUỒN SƠ ĐỒ}
+
+Dưới đây là mã nguồn MermaidJS để sinh ra các sơ đồ Use Case và ERD trong báo cáo. Bạn có thể sao chép mã này vào \url{https://mermaid.live} để tạo hình ảnh.
+
+\section*{1. Use Case Diagram}
+\begin{lstlisting}
+graph LR
+    Player((Player))
+    
+    subgraph "Room Management"
+        UC1(Create Room)
+        UC2(Join Room)
+        UC3(Configure Room)
+        UC4(Add Bots)
+    end
+    
+    subgraph "Gameplay"
+        UC5(Fire Shot)
+        UC6(Get AI Hint)
+        UC7(Surrender)
+    end
+    
+    subgraph "Social & Stats"
+        UC8(Chat)
+        UC9(View Leaderboard)
+    end
+    
+    Player --- UC1
+    Player --- UC2
+    Player --- UC3
+    Player --- UC4
+    Player --- UC5
+    Player --- UC6
+    Player --- UC7
+    Player --- UC8
+    Player --- UC9
+\end{lstlisting}
+
+\section*{2. Entity Relationship Diagram (ERD)}
+\begin{lstlisting}
+erDiagram
+    PLAYER_STATS {
+        bigint id PK
+        varchar name UK
+        int total_games
+        int total_wins
+        int total_kills
+        int best_multi_kill
+        timestamp created_at
+        timestamp updated_at
+    }
+\end{lstlisting}
+
+% ==================================================================
+% PHỤ LỤC: PHÂN CÔNG CÔNG VIỆC
+% ==================================================================
+\chapter*{PHỤ LỤC: PHÂN CÔNG CÔNG VIỆC}
+\addcontentsline{toc}{chapter}{PHỤ LỤC: PHÂN CÔNG CÔNG VIỆC}
+
+Phân công dưới đây được trình bày theo \textbf{module/chức năng} của hệ thống để phục vụ việc phối hợp chuẩn bị báo cáo và vấn đáp. Mỗi thành viên chịu trách nhiệm \textbf{nắm chắc, có thể mở mã nguồn và giải thích/đi demo} phần việc được giao.
+
+\begin{longtable}{|>{\raggedright\arraybackslash}p{4.2cm}|c|>{\raggedright\arraybackslash}p{6.8cm}|>{\raggedright\arraybackslash}p{3.6cm}|}
+\hline
+    \textbf{Thành viên} & \textbf{Tỉ lệ} & \textbf{Nội dung phụ trách} & \textbf{Minh chứng trong dự án} \\
+\hline
+\endfirsthead
+
+\hline
+    \textbf{Thành viên} & \textbf{Tỉ lệ} & \textbf{Nội dung phụ trách} & \textbf{Minh chứng trong dự án} \\
+\hline
+\endhead
+
+\hline
+\endfoot
+
+\hline
+\endlastfoot
+
+    \textbf{Lường Văn Tâm} (22001349)
+& 50\%
+&
+\begin{itemize}[leftmargin=*,noitemsep,topsep=0pt]
+    \item Thiết kế kiến trúc monorepo (client/server/shared), luồng đồng bộ trạng thái game.
+    \item Cài đặt và/hoặc tích hợp logic dùng chung: hằng số game, vật lý, địa hình, xử lý quỹ đạo đạn.
+    \item Parser \& evaluator cho biểu thức/hàm số; liên kết với gameplay (bắn theo hàm số).
+    \item Tích hợp tổng thể và kiểm thử end-to-end (chạy dev, kết nối client--server).
+\end{itemize}
+& \texttt{shared/src/} (\texttt{game/}, \texttt{function/}, \texttt{gameConstants.ts}); \texttt{server/src/main.ts}; \texttt{client/src/ui/}
+\\
+\hline
+
+    \textbf{Khương Thanh Tín} (22001358)
+& 25\%
+&
+\begin{itemize}[leftmargin=*,noitemsep,topsep=0pt]
+    \item Backend: WebSocket server, xử lý room/trận đấu theo thời gian thực ở phía server.
+    \item CSDL thống kê người chơi: thiết kế bảng, truy vấn/ghi nhận thống kê.
+    \item Tính năng AI Hint phía server (tích hợp/đóng gói lời gọi LLM; script debug phục vụ demo).
+\end{itemize}
+& \texttt{server/src/} (\texttt{statsDb.ts}, \texttt{llmHint.ts}, \texttt{geminiHint.ts}, \texttt{main.ts}); \texttt{server/sql/schema.sql}; \texttt{server/scripts/}
+\\
+\hline
+
+    \textbf{Cao Thanh Phương} (22001341)
+& 25\%
+&
+\begin{itemize}[leftmargin=*,noitemsep,topsep=0pt]
+    \item Frontend UI/UX: bố cục màn hình, điều hướng các màn (menu, phòng chờ, màn game).
+    \item Render game trên canvas: hiển thị terrain, người chơi, hiệu ứng, input nhập hàm số.
+    \item Tích hợp client with server (kết nối WebSocket, cập nhật state lên UI).
+\end{itemize}
+& \texttt{client/src/ui/} (\texttt{App.tsx}, \texttt{GameCanvas.tsx}); \texttt{client/src/main.tsx}; \texttt{client/src/global.css}; \texttt{client/public/rsc/}
+\\
+\end{longtable}
 
 \end{document}

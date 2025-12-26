@@ -486,13 +486,18 @@ export function GameCanvas({
       if (nowMs >= explodeAt) holesToDraw.push(lastShot.explosion);
     }
 
-    ctx.globalCompositeOperation = "destination-out";
+    // Render explosion craters as solid black, instead of making the canvas transparent.
+    // Using `destination-out` here would also punch through the background layers, which
+    // can make the "hole" look washed-out depending on the page behind the canvas.
+    ctx.save();
+    ctx.globalCompositeOperation = "source-over";
+    ctx.fillStyle = "#000";
     for (const hole of holesToDraw) {
       ctx.beginPath();
       ctx.arc(hole.x, hole.y, hole.r, 0, Math.PI * 2);
       ctx.fill();
     }
-    ctx.globalCompositeOperation = "source-over";
+    ctx.restore();
 
     const turnId = g.currentTurnClientId;
     const shotNow = lastShot ? nowMs : 0;
