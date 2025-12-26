@@ -897,62 +897,6 @@ npm run dev
 Repository GitHub của project: \url{https://github.com/tam0918/graphwar_web}
 
 \newpage
-% ==================================================================
-% PHỤ LỤC: MÃ NGUỒN SƠ ĐỒ (MERMAID)
-% ==================================================================
-\chapter*{PHỤ LỤC: MÃ NGUỒN SƠ ĐỒ (MERMAID)}
-\addcontentsline{toc}{chapter}{PHỤ LỤC: MÃ NGUỒN SƠ ĐỒ}
-
-Dưới đây là mã nguồn MermaidJS để sinh ra các sơ đồ Use Case và ERD trong báo cáo. Bạn có thể sao chép mã này vào \url{https://mermaid.live} để tạo hình ảnh.
-
-\section*{1. Use Case Diagram}
-\begin{lstlisting}
-graph LR
-    Player((Player))
-    
-    subgraph "Room Management"
-        UC1(Create Room)
-        UC2(Join Room)
-        UC3(Configure Room)
-        UC4(Add Bots)
-    end
-    
-    subgraph "Gameplay"
-        UC5(Fire Shot)
-        UC6(Get AI Hint)
-        UC7(Surrender)
-    end
-    
-    subgraph "Social & Stats"
-        UC8(Chat)
-        UC9(View Leaderboard)
-    end
-    
-    Player --- UC1
-    Player --- UC2
-    Player --- UC3
-    Player --- UC4
-    Player --- UC5
-    Player --- UC6
-    Player --- UC7
-    Player --- UC8
-    Player --- UC9
-\end{lstlisting}
-
-\section*{2. Entity Relationship Diagram (ERD)}
-\begin{lstlisting}
-erDiagram
-    PLAYER_STATS {
-        bigint id PK
-        varchar name UK
-        int total_games
-        int total_wins
-        int total_kills
-        int best_multi_kill
-        timestamp created_at
-        timestamp updated_at
-    }
-\end{lstlisting}
 
 % ==================================================================
 % PHỤ LỤC: PHÂN CÔNG CÔNG VIỆC
